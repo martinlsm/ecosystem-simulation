@@ -1,7 +1,8 @@
 use bevy::{
     core::FixedTimestep,
-    prelude::*,
     math::const_vec3,
+    prelude::*,
+    sprite::collide_aabb::{collide, Collision},
 };
 
 use std::f32::consts::PI;
@@ -21,9 +22,9 @@ fn main() {
         .add_system_set(
             SystemSet::on_update(AppState::InGame)
                 .with_run_criteria(FixedTimestep::step(TIME_STEP as f64))
-                .with_system(handle_input)
-                .with_system(update_velocity)
-                .with_system(apply_velocity)
+                .with_system(handle_input.before(update_velocity))
+                .with_system(update_velocity.before(apply_velocity))
+                .with_system(apply_velocity),
         )
         .add_system_set(SystemSet::on_exit(AppState::InGame).with_system(cleanup_game))
         .run();
@@ -48,6 +49,12 @@ struct Velocity(Vec3);
 
 #[derive(Component)]
 struct TargetDir(Vec3);
+
+#[derive(Component)]
+struct Herbivore;
+
+#[derive(Component)]
+struct Food;
 
 const NORMAL_BUTTON: Color = Color::rgb(0.15, 0.15, 0.15);
 const HOVERED_BUTTON: Color = Color::rgb(0.25, 0.25, 0.25);
@@ -115,18 +122,30 @@ fn cleanup_menu(mut commands: Commands, menu_data: Res<MenuData>) {
 const NUM_ACTORS: usize = 10;
 
 fn setup_game(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let cam: Entity = commands.spawn_bundle(OrthographicCameraBundle::new_2d()).id();
+    let cam: Entity = commands
+        .spawn_bundle(OrthographicCameraBundle::new_2d())
+        .id();
 
     let mut rng = rand::thread_rng();
 
     for _ in 0..NUM_ACTORS {
-        let init_pos = Vec3::new(400.0 * rng.gen::<f32>() - 200.0, 400.0 * rng.gen::<f32>() - 200.0, 0.0);
+        let init_pos_actor = Vec3::new(
+            400.0 * rng.gen::<f32>() - 200.0,
+            400.0 * rng.gen::<f32>() - 200.0,
+            0.0,
+        );
+        let init_pos_food = Vec3::new(
+            400.0 * rng.gen::<f32>() - 200.0,
+            400.0 * rng.gen::<f32>() - 200.0,
+            0.0,
+        );
 
         commands
             .spawn()
+            .insert(Herbivore)
             .insert_bundle(SpriteBundle {
                 transform: Transform {
-                    translation: init_pos,
+                    translation: init_pos_actor,
                     scale: Vec3::new(2.0, 2.0, 1.0),
                     ..default()
                 },
@@ -136,8 +155,18 @@ fn setup_game(mut commands: Commands, asset_server: Res<AssetServer>) {
             .insert(Velocity(const_vec3!([0.0, 0.0, 0.0])))
             .insert(TargetDir(const_vec3!([0.0, 0.0, 0.0])));
 
-        commands.insert_resource(GameData { cam });
+        commands.spawn().insert_bundle(SpriteBundle {
+            transform: Transform {
+                translation: init_pos_food,
+                scale: Vec3::new(0.75, 0.75, 1.0),
+                ..default()
+            },
+            texture: asset_server.load("branding/food.png"),
+            ..default()
+        });
     }
+
+    commands.insert_resource(GameData { cam });
 }
 
 fn cleanup_game(mut commands: Commands, game_data: Res<GameData>, entities: Query<Entity>) {
@@ -164,8 +193,11 @@ fn apply_velocity(mut query: Query<(&mut Transform, &Velocity)>) {
     }
 }
 
-fn handle_input(mut state: ResMut<State<AppState>>,
-    keyboard_input: Res<Input<KeyCode>>, mut query: Query<&mut TargetDir>) {
+fn handle_input(
+    mut state: ResMut<State<AppState>>,
+    keyboard_input: Res<Input<KeyCode>>,
+    mut query: Query<&mut TargetDir>,
+) {
     if keyboard_input.just_pressed(KeyCode::Escape) {
         state.set(AppState::Menu).unwrap();
         return;
@@ -197,5 +229,24 @@ fn update_velocity(mut query: Query<(&mut Velocity, &TargetDir)>) {
 
     for (mut velocity, target_dir) in query.iter_mut() {
         velocity.0 = (1.0 - UPDATE_STEP) * velocity.0 + UPDATE_STEP * target_dir.0;
+    }
+}
+
+fn eat_food(
+    mut commands: Commands,
+    mut food_query: Query<(Entity, &mut Transform), With<Food>>,
+    mut herbivore_query: Query<&Transform, With<Herbivore>>,
+) {
+    for (food_entity, food_transform) in food_query.iter() {
+        let food_size = food_transform.scale.truncate();
+
+        for herbivore_transform in herbivore_query.iter() {
+            let herbivore_size = herbivore_transform.scale.truncate();
+
+            let collision = collide(herbivore_transform.translation, herbivore_size, food_transform.translation, food_size);
+            if let Some(collision) = collision {
+                println!("collision");
+            }
+        }
     }
 }
