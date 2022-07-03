@@ -1,7 +1,7 @@
 use bevy::{
     core::FixedTimestep,
     prelude::*,
-    math::{const_vec3, vec3},
+    math::const_vec3,
 };
 
 use std::f32::consts::PI;
@@ -54,17 +54,13 @@ const HOVERED_BUTTON: Color = Color::rgb(0.25, 0.25, 0.25);
 const PRESSED_BUTTON: Color = Color::rgb(0.35, 0.75, 0.35);
 
 fn setup_menu(mut commands: Commands, asset_server: Res<AssetServer>) {
-    // ui camera
     commands.spawn_bundle(UiCameraBundle::default());
     let button_entity = commands
         .spawn_bundle(ButtonBundle {
             style: Style {
                 size: Size::new(Val::Px(150.0), Val::Px(65.0)),
-                // center button
                 margin: Rect::all(Val::Auto),
-                // horizontally center child text
                 justify_content: JustifyContent::Center,
-                // vertically center child text
                 align_items: AlignItems::Center,
                 ..default()
             },
@@ -154,10 +150,16 @@ fn cleanup_game(mut commands: Commands, game_data: Res<GameData>, entities: Quer
 
 fn apply_velocity(mut query: Query<(&mut Transform, &Velocity)>) {
     for (mut transform, velocity) in query.iter_mut() {
+        // Update position.
         transform.translation = transform.translation + velocity.0 * TIME_STEP;
 
-        if velocity.0 != Vec3::ZERO {
-            transform.rotation = Quat::from_rotation_z((velocity.0.y / velocity.0.x).atan() - PI / 2.0);
+        // Update sprite rotation.
+        if velocity.0.length() > 0.001 {
+            let mut angle = (velocity.0.y / velocity.0.x).atan() - PI / 2.0;
+            if velocity.0.x < 0.0 {
+                angle += PI;
+            }
+            transform.rotation = Quat::from_rotation_z(angle);
         }
     }
 }
