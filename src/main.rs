@@ -24,7 +24,8 @@ fn main() {
                 .with_run_criteria(FixedTimestep::step(TIME_STEP as f64))
                 .with_system(handle_input.before(update_velocity))
                 .with_system(update_velocity.before(apply_velocity))
-                .with_system(apply_velocity),
+                .with_system(apply_velocity.before(eat_food))
+                .with_system(eat_food),
         )
         .add_system_set(SystemSet::on_exit(AppState::InGame).with_system(cleanup_game))
         .run();
@@ -119,7 +120,7 @@ fn cleanup_menu(mut commands: Commands, menu_data: Res<MenuData>) {
     commands.entity(menu_data.button_entity).despawn_recursive();
 }
 
-const NUM_ACTORS: usize = 10;
+const NUM_ACTORS: usize = 1;
 
 fn setup_game(mut commands: Commands, asset_server: Res<AssetServer>) {
     let cam: Entity = commands
@@ -146,22 +147,22 @@ fn setup_game(mut commands: Commands, asset_server: Res<AssetServer>) {
             .insert_bundle(SpriteBundle {
                 transform: Transform {
                     translation: init_pos_actor,
-                    scale: Vec3::new(2.0, 2.0, 1.0),
+                    scale: Vec3::new(4.0, 4.0, 1.0),
                     ..default()
                 },
-                texture: asset_server.load("branding/herbivore2.png"),
+                texture: asset_server.load("sprites/herbivore.png"),
                 ..default()
             })
             .insert(Velocity(const_vec3!([0.0, 0.0, 0.0])))
             .insert(TargetDir(const_vec3!([0.0, 0.0, 0.0])));
 
-        commands.spawn().insert_bundle(SpriteBundle {
+        commands.spawn().insert(Food).insert_bundle(SpriteBundle {
             transform: Transform {
                 translation: init_pos_food,
-                scale: Vec3::new(0.75, 0.75, 1.0),
+                scale: Vec3::new(4.0, 4.0, 1.0),
                 ..default()
             },
-            texture: asset_server.load("branding/food.png"),
+            texture: asset_server.load("sprites/food.png"),
             ..default()
         });
     }
@@ -196,7 +197,7 @@ fn apply_velocity(mut query: Query<(&mut Transform, &Velocity)>) {
 fn handle_input(
     mut state: ResMut<State<AppState>>,
     keyboard_input: Res<Input<KeyCode>>,
-    mut query: Query<&mut TargetDir>,
+    mut query: Query<&mut TargetDir, With<Herbivore>>,
 ) {
     if keyboard_input.just_pressed(KeyCode::Escape) {
         state.set(AppState::Menu).unwrap();
@@ -234,8 +235,8 @@ fn update_velocity(mut query: Query<(&mut Velocity, &TargetDir)>) {
 
 fn eat_food(
     mut commands: Commands,
-    mut food_query: Query<(Entity, &mut Transform), With<Food>>,
-    mut herbivore_query: Query<&Transform, With<Herbivore>>,
+    mut food_query: Query<(Entity, &mut Transform), (With<Food>, Without<Herbivore>)>,
+    mut herbivore_query: Query<&mut Transform, (With<Herbivore>, Without<Food>)>,
 ) {
     for (food_entity, food_transform) in food_query.iter() {
         let food_size = food_transform.scale.truncate();
@@ -243,7 +244,13 @@ fn eat_food(
         for herbivore_transform in herbivore_query.iter() {
             let herbivore_size = herbivore_transform.scale.truncate();
 
-            let collision = collide(herbivore_transform.translation, herbivore_size, food_transform.translation, food_size);
+            let collision = collide(
+                herbivore_transform.translation,
+                herbivore_size,
+                food_transform.translation,
+                food_size,
+            );
+            
             if let Some(collision) = collision {
                 println!("collision");
             }
