@@ -25,7 +25,8 @@ fn main() {
                 .with_system(handle_input.before(update_velocity))
                 .with_system(update_velocity.before(apply_velocity))
                 .with_system(apply_velocity.before(eat_food))
-                .with_system(eat_food),
+                .with_system(eat_food.before(spawn_food))
+                .with_system(spawn_food),
         )
         .add_system_set(SystemSet::on_exit(AppState::InGame).with_system(cleanup_game))
         .run();
@@ -133,7 +134,7 @@ fn setup_game(mut commands: Commands, asset_server: Res<AssetServer>) {
         let init_pos_actor = Vec3::new(
             400.0 * rng.gen::<f32>() - 200.0,
             400.0 * rng.gen::<f32>() - 200.0,
-            0.0,
+            1.0,
         );
         let init_pos_food = Vec3::new(
             400.0 * rng.gen::<f32>() - 200.0,
@@ -167,7 +168,9 @@ fn setup_game(mut commands: Commands, asset_server: Res<AssetServer>) {
         });
     }
 
-    commands.insert_resource(GameData { cam });
+    commands.insert_resource(GameData {
+        cam: cam,
+    });
 }
 
 fn cleanup_game(mut commands: Commands, game_data: Res<GameData>, entities: Query<Entity>) {
@@ -184,13 +187,13 @@ fn apply_velocity(mut query: Query<(&mut Transform, &Velocity)>) {
         transform.translation = transform.translation + velocity.0 * TIME_STEP;
 
         // Update sprite rotation.
-        if velocity.0.length() > 0.001 {
-            let mut angle = (velocity.0.y / velocity.0.x).atan() - PI / 2.0;
-            if velocity.0.x < 0.0 {
-                angle += PI;
-            }
-            transform.rotation = Quat::from_rotation_z(angle);
-        }
+        // if velocity.0.length() > 0.001 {
+        //     let mut angle = (velocity.0.y / velocity.0.x).atan() - PI / 2.0;
+        //     if velocity.0.x < 0.0 {
+        //         angle += PI;
+        //     }
+        //     transform.rotation = Quat::from_rotation_z(angle);
+        // }
     }
 }
 
@@ -218,7 +221,7 @@ fn handle_input(
         new_direction.y = -1.0;
     }
 
-    new_direction = new_direction.normalize_or_zero() * 100.0;
+    new_direction = new_direction.normalize_or_zero() * 200.0;
 
     for mut target_dir in query.iter_mut() {
         target_dir.0 = new_direction;
@@ -239,21 +242,30 @@ fn eat_food(
     mut herbivore_query: Query<&mut Transform, (With<Herbivore>, Without<Food>)>,
 ) {
     for (food_entity, food_transform) in food_query.iter() {
-        let food_size = food_transform.scale.truncate();
+        let food_size = food_transform.scale.truncate() * Vec2::new(2.0, 2.0);
 
         for herbivore_transform in herbivore_query.iter() {
-            let herbivore_size = herbivore_transform.scale.truncate();
+            let mouth_translation = herbivore_transform.translation
+                + Vec3::new(0.0, 5.0 * herbivore_transform.scale.y, 0.0);
+            let mouth_size = herbivore_transform.scale.truncate() * Vec2::new(4.0, 2.0);
 
             let collision = collide(
-                herbivore_transform.translation,
-                herbivore_size,
+                mouth_translation,
+                mouth_size,
                 food_transform.translation,
                 food_size,
             );
-            
+            let mut rng = rand::thread_rng();
+
             if let Some(collision) = collision {
-                println!("collision");
+                commands.entity(food_entity).despawn();
             }
         }
     }
+}
+
+fn spawn_food(
+    mut commands: Commands,
+    mut food_query: Query<Entity, With<Food>>,
+) {
 }
