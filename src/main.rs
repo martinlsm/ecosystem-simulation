@@ -4,16 +4,22 @@ use rand::Rng;
 use std::f32::consts::PI;
 use std::time::Duration;
 
+const NUM_HERBIVORES: usize = 2;
+const MAX_BERRIES: u64 = 1;
+
 const TIME_STEP_MS: u64 = 30;
 const TIME_STEP_SEC: f32 = (TIME_STEP_MS as f32) / 1000.0;
 
 fn main() {
     let mut fixed_update = SystemStage::parallel();
-    fixed_update.add_system(apply_velocity.run_in_state(AppState::InGame));
-    fixed_update.add_system(update_velocity.run_in_state(AppState::InGame));
-    fixed_update.add_system(handle_input.run_in_state(AppState::InGame));
-    fixed_update.add_system(eat_berries.run_in_state(AppState::InGame));
-    fixed_update.add_system(spawn_berries.run_in_state(AppState::InGame));
+    fixed_update.add_system(handle_input.run_in_state(AppState::InGame).label("handle_input"));
+
+    fixed_update.add_system(update_velocity.run_in_state(AppState::InGame).label("update_velocity"));
+    fixed_update.add_system(apply_velocity.run_in_state(AppState::InGame).label("apply_velocity").after("update_velocity"));
+
+    fixed_update.add_system(use_brain.run_in_state(AppState::InGame).label("use_brain").after("apply_velocity"));
+    fixed_update.add_system(eat_berries.run_in_state(AppState::InGame).label("eat_berries").after("use_brain"));
+    fixed_update.add_system(spawn_berries.run_in_state(AppState::InGame).label("spawn_berries").after("eat_berries"));
 
     App::new()
         .add_plugins(DefaultPlugins)
@@ -130,8 +136,6 @@ fn cleanup_menu(mut commands: Commands, menu_data: Res<MenuData>) {
     commands.entity(menu_data.button_entity).despawn_recursive();
 }
 
-const NUM_ACTORS: usize = 1;
-
 fn setup_game(mut commands: Commands, asset_server: Res<AssetServer>) {
     let cam: Entity = commands
         .spawn_bundle(OrthographicCameraBundle::new_2d())
@@ -139,11 +143,11 @@ fn setup_game(mut commands: Commands, asset_server: Res<AssetServer>) {
 
     let mut rng = rand::thread_rng();
 
-    for _ in 0..NUM_ACTORS {
+    for _ in 0..NUM_HERBIVORES {
         let init_pos = Vec3::new(
             400.0 * rng.gen::<f32>() - 200.0,
             400.0 * rng.gen::<f32>() - 200.0,
-            1.0,
+            2.0,
         );
 
         commands
@@ -166,7 +170,7 @@ fn setup_game(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.insert_resource(GameData {
         cam: cam,
         num_berries: 0,
-        max_berries: 50,
+        max_berries: MAX_BERRIES,
     });
 }
 
@@ -196,43 +200,20 @@ fn apply_velocity(mut query: Query<(&mut Rotation, &mut Transform, &Velocity)>) 
     }
 }
 
-fn handle_input(
-    mut commands: Commands,
-    keyboard_input: Res<Input<KeyCode>>,
-    mut query: Query<&mut TargetDir, With<Herbivore>>,
-) {
+fn handle_input(mut commands: Commands, keyboard_input: Res<Input<KeyCode>>) {
     if keyboard_input.just_pressed(KeyCode::Escape) {
         commands.insert_resource(NextState(AppState::Menu));
 
         return;
     }
-
-    let mut new_direction = Vec3::ZERO;
-
-    if keyboard_input.pressed(KeyCode::Left) {
-        new_direction.x = -1.0;
-    } else if keyboard_input.pressed(KeyCode::Right) {
-        new_direction.x = 1.0;
-    }
-
-    if keyboard_input.pressed(KeyCode::Up) {
-        new_direction.y = 1.0;
-    } else if keyboard_input.pressed(KeyCode::Down) {
-        new_direction.y = -1.0;
-    }
-
-    new_direction = new_direction.normalize_or_zero() * 200.0;
-
-    for mut target_dir in query.iter_mut() {
-        target_dir.0 = new_direction;
-    }
 }
 
 fn update_velocity(mut query: Query<(&mut Velocity, &TargetDir)>) {
-    const UPDATE_STEP: f32 = 0.1;
+    const UPDATE_FRACTION: f32 = 0.1;
 
     for (mut velocity, target_dir) in query.iter_mut() {
-        velocity.0 = (1.0 - UPDATE_STEP) * velocity.0 + UPDATE_STEP * target_dir.0;
+        // TODO: Find some better formula here.
+        velocity.0 = (1.0 - UPDATE_FRACTION) * velocity.0 + UPDATE_FRACTION * target_dir.0;
     }
 }
 
@@ -246,9 +227,14 @@ fn eat_berries(
         let berry_size = berry_transform.scale.truncate() * Vec2::new(2.0, 2.0);
 
         for (herbivore_transform, rotation) in herbivore_query.iter() {
+            // TODO: Extract these parameters to some form of config file/code.
             let mouth_offset = herbivore_transform.scale.truncate() * 5.0;
-            let mouth_translation = herbivore_transform.translation + Vec3::new(-rotation.0.sin() * mouth_offset.x, rotation.0.cos() * mouth_offset.y, 0.0);
-
+            let mouth_translation = herbivore_transform.translation
+                + Vec3::new(
+                    -rotation.0.sin() * mouth_offset.x,
+                    rotation.0.cos() * mouth_offset.y,
+                    0.0,
+                );
             let mouth_size = herbivore_transform.scale.truncate() * Vec2::new(4.0, 2.0);
 
             let collision = collide(
@@ -261,6 +247,9 @@ fn eat_berries(
             if let Some(_collision) = collision {
                 commands.entity(berry_entity).despawn();
                 game_data.num_berries -= 1;
+
+                // Break here so that no other herbivore can eat the same berry during the same frame.
+                break;
             }
         }
     }
@@ -277,7 +266,7 @@ fn spawn_berries(
         let init_pos_berry = Vec3::new(
             400.0 * rng.gen::<f32>() - 200.0,
             400.0 * rng.gen::<f32>() - 200.0,
-            2.0,
+            1.0,
         );
 
         commands.spawn().insert(Berry).insert_bundle(SpriteBundle {
@@ -292,4 +281,30 @@ fn spawn_berries(
     }
 
     game_data.num_berries = game_data.max_berries;
+}
+
+fn use_brain(
+    mut herbivore_query: Query<(&Transform, &mut TargetDir), (With<Herbivore>, Without<Berry>)>,
+    berry_query: Query<&Transform, (With<Berry>, Without<Herbivore>)>,
+) {
+    for (herbivore_transform, mut herbivore_target_dir) in herbivore_query.iter_mut() {
+        let mut min_dist = f32::MAX;
+        let mut target_berry_pos: Option<Vec3> = None;
+
+        for berry_transform in berry_query.iter() {
+            let dist =
+                (berry_transform.translation - herbivore_transform.translation).length_squared();
+            if dist < min_dist {
+                min_dist = dist;
+                target_berry_pos = Some(berry_transform.translation);
+            }
+        }
+
+        match target_berry_pos {
+            Some(target_pos) => {
+                herbivore_target_dir.0 = target_pos - herbivore_transform.translation
+            }
+            None => herbivore_target_dir.0 = Vec3::ZERO,
+        }
+    }
 }
