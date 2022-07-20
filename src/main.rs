@@ -4,7 +4,8 @@ use rand::Rng;
 use std::f32::consts::PI;
 use std::time::Duration;
 
-const NUM_HERBIVORES: usize = 2;
+const NUM_HERBIVORES: usize = 1;
+const NUM_CARNIVORES: usize = 0;
 const MAX_BERRIES: u64 = 1;
 
 const TIME_STEP_MS: u64 = 30;
@@ -18,7 +19,8 @@ fn main() {
     fixed_update.add_system(apply_velocity.run_in_state(AppState::InGame).label("apply_velocity").after("update_velocity"));
 
     fixed_update.add_system(use_brain.run_in_state(AppState::InGame).label("use_brain").after("apply_velocity"));
-    fixed_update.add_system(eat_berries.run_in_state(AppState::InGame).label("eat_berries").after("use_brain"));
+    // fixed_update.add_system(use_carnivore_brain.run_in_state(AppState::InGame).label("use_carnivore_brain").after("use_brain"));
+    fixed_update.add_system(eat_berries.run_in_state(AppState::InGame).label("eat_berries").after("use_carnivore_brain"));
     fixed_update.add_system(spawn_berries.run_in_state(AppState::InGame).label("spawn_berries").after("eat_berries"));
 
     App::new()
@@ -58,17 +60,26 @@ struct GameData {
     max_berries: u64,
 }
 
+// XXX: Rename
 #[derive(Component)]
-struct Velocity(Vec3);
+struct Velocity {
+    curr_velocity: Vec3,
+    max_speed: f32,
+    curr_acceleration: Vec3,
+    max_acceleration: f32,
+}
 
 #[derive(Component)]
-struct TargetDir(Vec3);
+struct TargetPoint(Vec3);
 
 #[derive(Component)]
 struct Rotation(f32);
 
 #[derive(Component)]
 struct Herbivore;
+
+#[derive(Component)]
+struct Carnivore;
 
 #[derive(Component)]
 struct Berry;
@@ -162,8 +173,38 @@ fn setup_game(mut commands: Commands, asset_server: Res<AssetServer>) {
                 texture: asset_server.load("sprites/herbivore.png"),
                 ..default()
             })
-            .insert(Velocity(const_vec3!([0.0, 0.0, 0.0])))
-            .insert(TargetDir(const_vec3!([0.0, 0.0, 0.0])))
+            .insert(Velocity {
+                curr_velocity: Vec3::ZERO,
+                max_speed: 200.0,
+                curr_acceleration: Vec3::ZERO,
+                max_acceleration: 1000.0,
+            })
+            .insert(TargetPoint(const_vec3!([0.0, 0.0, 0.0])))
+            .insert(Rotation(0.0));
+    }
+
+    for _ in 0..NUM_CARNIVORES {
+        let init_pos = Vec3::new(
+            400.0 * rng.gen::<f32>() - 200.0,
+            400.0 * rng.gen::<f32>() - 200.0,
+            2.0,
+        );
+
+        commands
+            .spawn()
+            .insert(Carnivore)
+            .insert_bundle(SpriteBundle {
+                transform: Transform { translation: init_pos, scale: Vec3::new(4.0, 4.0, 1.0), ..default() },
+                texture: asset_server.load("sprites/carnivore.png"),
+                ..default()
+            })
+            .insert(Velocity {
+                curr_velocity: Vec3::ZERO,
+                max_speed: 150.0,
+                curr_acceleration: Vec3::ZERO,
+                max_acceleration: 1000.0,
+            })
+            .insert(TargetPoint(const_vec3!([0.0, 0.0, 0.0])))
             .insert(Rotation(0.0));
     }
 
@@ -185,12 +226,13 @@ fn cleanup_game(mut commands: Commands, game_data: Res<GameData>, entities: Quer
 fn apply_velocity(mut query: Query<(&mut Rotation, &mut Transform, &Velocity)>) {
     for (mut rotation, mut transform, velocity) in query.iter_mut() {
         // Update position.
-        transform.translation = transform.translation + velocity.0 * TIME_STEP_SEC;
+        transform.translation = transform.translation + velocity.curr_velocity * TIME_STEP_SEC;
 
         // Update sprite rotation.
-        if velocity.0.length() > 0.001 {
-            let mut angle = (velocity.0.y / velocity.0.x).atan() - PI / 2.0;
-            if velocity.0.x < 0.0 {
+        let velocity = &velocity.curr_velocity;
+        if velocity.length() > 0.001 {
+            let mut angle = (velocity.y / velocity.x).atan() - PI / 2.0;
+            if velocity.x < 0.0 {
                 angle += PI;
             }
 
@@ -208,12 +250,10 @@ fn handle_input(mut commands: Commands, keyboard_input: Res<Input<KeyCode>>) {
     }
 }
 
-fn update_velocity(mut query: Query<(&mut Velocity, &TargetDir)>) {
-    const UPDATE_FRACTION: f32 = 0.1;
-
-    for (mut velocity, target_dir) in query.iter_mut() {
-        // TODO: Find some better formula here.
-        velocity.0 = (1.0 - UPDATE_FRACTION) * velocity.0 + UPDATE_FRACTION * target_dir.0;
+fn update_velocity(mut query: Query<(&mut Velocity, &TargetPoint)>) {
+    for (mut velocity, target_point) in query.iter_mut() {
+        velocity.curr_acceleration = (target_point.0.normalize_or_zero() * velocity.max_acceleration).clamp_length_max(TIME_STEP_SEC * velocity.max_acceleration);
+        velocity.curr_velocity = (velocity.curr_velocity + velocity.curr_acceleration).clamp_length_max(velocity.max_speed);
     }
 }
 
@@ -284,10 +324,10 @@ fn spawn_berries(
 }
 
 fn use_brain(
-    mut herbivore_query: Query<(&Transform, &mut TargetDir), (With<Herbivore>, Without<Berry>)>,
+    mut herbivore_query: Query<(&Transform, &Velocity, &mut TargetPoint), (With<Herbivore>, Without<Berry>)>,
     berry_query: Query<&Transform, (With<Berry>, Without<Herbivore>)>,
 ) {
-    for (herbivore_transform, mut herbivore_target_dir) in herbivore_query.iter_mut() {
+    for (herbivore_transform, velocity, mut herbivore_target_point) in herbivore_query.iter_mut() {
         let mut min_dist = f32::MAX;
         let mut target_berry_pos: Option<Vec3> = None;
 
@@ -302,9 +342,57 @@ fn use_brain(
 
         match target_berry_pos {
             Some(target_pos) => {
-                herbivore_target_dir.0 = target_pos - herbivore_transform.translation
+                // Algorithm taken from: https://gamedev.stackexchange.com/questions/17313/how-does-one-prevent-homing-missiles-from-orbiting-their-targets
+                let time_estimate = (herbivore_transform.translation - target_pos).length() / velocity.curr_velocity.length();
+                let dest_estimate = target_pos - velocity.curr_velocity * time_estimate;
+
+                herbivore_target_point.0 = dest_estimate - herbivore_transform.translation;
+                // herbivore_target_point.0 = target_pos - velocity.curr_velocity / 5.0 - herbivore_transform.translation;
             }
-            None => herbivore_target_dir.0 = Vec3::ZERO,
+            None => herbivore_target_point.0 = Vec3::ZERO,
+        }
+    }
+}
+
+/*
+// XXX: Rename
+fn use_carnivore_brain(
+    mut carnivore_query: Query<(&Transform, &mut TargetPoint), (With<Carnivore>, Without<Herbivore>)>,
+    herbivore_query: Query<&Transform, (With<Herbivore>, Without<Carnivore>)>,
+) {
+    for (carnivore_transform, mut carnivore_target_point) in carnivore_query.iter_mut() {
+        let mut min_dist = f32::MAX;
+        let mut target_herbivore_pos: Option<Vec3> = None;
+
+        for herbivore_transform in herbivore_query.iter() {
+            let dist =
+                (herbivore_transform.translation - carnivore_transform.translation).length_squared();
+            if dist < min_dist {
+                min_dist = dist;
+                target_herbivore_pos = Some(herbivore_transform.translation);
+            }
+        }
+
+        match target_herbivore_pos {
+            Some(target_pos) => {
+                carnivore_target_point.0 = target_pos - carnivore_transform.translation
+            }
+            None => carnivore_target_point.0 = Vec3::ZERO,
+        }
+    }
+}
+*/
+
+fn handle_collision(mut herbivore_query: Query<(&Transform, &mut Velocity), With<Herbivore>>) {
+    let mut combinations = herbivore_query.iter_combinations_mut();
+    while let Some([(t1, mut v1), (t2, mut v2)]) = combinations.fetch_next() {
+        let t1_to_t2 = t2.translation - t1.translation;
+        let dist = t1_to_t2.length();
+        let threshold = 30.0;
+
+        if dist < threshold {
+            v1.curr_velocity -= (threshold - dist) * t1_to_t2.normalize_or_zero();
+            v2.curr_velocity += (threshold - dist) * t1_to_t2.normalize_or_zero();
         }
     }
 }
