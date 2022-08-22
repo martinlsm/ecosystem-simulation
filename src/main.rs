@@ -60,9 +60,8 @@ struct GameData {
     max_berries: u64,
 }
 
-// XXX: Rename
 #[derive(Component)]
-struct Velocity {
+struct MovingBody {
     curr_velocity: Vec3,
     max_speed: f32,
     curr_acceleration: Vec3,
@@ -173,7 +172,7 @@ fn setup_game(mut commands: Commands, asset_server: Res<AssetServer>) {
                 texture: asset_server.load("sprites/herbivore.png"),
                 ..default()
             })
-            .insert(Velocity {
+            .insert(MovingBody {
                 curr_velocity: Vec3::ZERO,
                 max_speed: 200.0,
                 curr_acceleration: Vec3::ZERO,
@@ -198,7 +197,7 @@ fn setup_game(mut commands: Commands, asset_server: Res<AssetServer>) {
                 texture: asset_server.load("sprites/carnivore.png"),
                 ..default()
             })
-            .insert(Velocity {
+            .insert(MovingBody {
                 curr_velocity: Vec3::ZERO,
                 max_speed: 150.0,
                 curr_acceleration: Vec3::ZERO,
@@ -223,13 +222,13 @@ fn cleanup_game(mut commands: Commands, game_data: Res<GameData>, entities: Quer
     }
 }
 
-fn apply_velocity(mut query: Query<(&mut Rotation, &mut Transform, &Velocity)>) {
-    for (mut rotation, mut transform, velocity) in query.iter_mut() {
+fn apply_velocity(mut query: Query<(&mut Rotation, &mut Transform, &MovingBody)>) {
+    for (mut rotation, mut transform, moving_body) in query.iter_mut() {
         // Update position.
-        transform.translation = transform.translation + velocity.curr_velocity * TIME_STEP_SEC;
+        transform.translation = transform.translation + moving_body.curr_velocity * TIME_STEP_SEC;
 
         // Update sprite rotation.
-        let velocity = &velocity.curr_velocity;
+        let velocity = &moving_body.curr_velocity;
         if velocity.length() > 0.001 {
             let mut angle = (velocity.y / velocity.x).atan() - PI / 2.0;
             if velocity.x < 0.0 {
@@ -250,10 +249,10 @@ fn handle_input(mut commands: Commands, keyboard_input: Res<Input<KeyCode>>) {
     }
 }
 
-fn update_velocity(mut query: Query<(&mut Velocity, &TargetPoint)>) {
-    for (mut velocity, target_point) in query.iter_mut() {
-        velocity.curr_acceleration = (target_point.0.normalize_or_zero() * velocity.max_acceleration).clamp_length_max(TIME_STEP_SEC * velocity.max_acceleration);
-        velocity.curr_velocity = (velocity.curr_velocity + velocity.curr_acceleration).clamp_length_max(velocity.max_speed);
+fn update_velocity(mut query: Query<(&mut MovingBody, &TargetPoint)>) {
+    for (mut moving_body, target_point) in query.iter_mut() {
+        moving_body.curr_acceleration = (target_point.0.normalize_or_zero() * moving_body.max_acceleration).clamp_length_max(TIME_STEP_SEC * moving_body.max_acceleration);
+        moving_body.curr_velocity = (moving_body.curr_velocity + moving_body.curr_acceleration).clamp_length_max(moving_body.max_speed);
     }
 }
 
@@ -324,7 +323,7 @@ fn spawn_berries(
 }
 
 fn use_brain(
-    mut herbivore_query: Query<(&Transform, &Velocity, &mut TargetPoint), (With<Herbivore>, Without<Berry>)>,
+    mut herbivore_query: Query<(&Transform, &MovingBody, &mut TargetPoint), (With<Herbivore>, Without<Berry>)>,
     berry_query: Query<&Transform, (With<Berry>, Without<Herbivore>)>,
 ) {
     for (herbivore_transform, velocity, mut herbivore_target_point) in herbivore_query.iter_mut() {
@@ -343,11 +342,15 @@ fn use_brain(
         match target_berry_pos {
             Some(target_pos) => {
                 // Algorithm taken from: https://gamedev.stackexchange.com/questions/17313/how-does-one-prevent-homing-missiles-from-orbiting-their-targets
-                let time_estimate = (herbivore_transform.translation - target_pos).length() / velocity.curr_velocity.length();
-                let dest_estimate = target_pos - velocity.curr_velocity * time_estimate;
+                let v_targ = -velocity.curr_velocity;
+                let s = herbivore_transform.translation - target_pos;
+                let t_estimate = s.length() / (v_targ.length() + f32::EPSILON);
 
-                herbivore_target_point.0 = dest_estimate - herbivore_transform.translation;
-                // herbivore_target_point.0 = target_pos - velocity.curr_velocity / 5.0 - herbivore_transform.translation;
+                // Unclear why this constant makes things better, but it prevents herbivores from
+                // oscillating to the left and right when chasing after berries.
+                let stability_constant = 0.8;
+                let target = target_pos + stability_constant * v_targ * t_estimate - herbivore_transform.translation;
+                herbivore_target_point.0 = target;
             }
             None => herbivore_target_point.0 = Vec3::ZERO,
         }
@@ -383,7 +386,7 @@ fn use_carnivore_brain(
 }
 */
 
-fn handle_collision(mut herbivore_query: Query<(&Transform, &mut Velocity), With<Herbivore>>) {
+fn handle_collision(mut herbivore_query: Query<(&Transform, &mut MovingBody), With<Herbivore>>) {
     let mut combinations = herbivore_query.iter_combinations_mut();
     while let Some([(t1, mut v1), (t2, mut v2)]) = combinations.fetch_next() {
         let t1_to_t2 = t2.translation - t1.translation;
