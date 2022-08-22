@@ -19,7 +19,6 @@ fn main() {
     fixed_update.add_system(apply_velocity.run_in_state(AppState::InGame).label("apply_velocity").after("update_velocity"));
 
     fixed_update.add_system(use_brain.run_in_state(AppState::InGame).label("use_brain").after("apply_velocity"));
-    // fixed_update.add_system(use_carnivore_brain.run_in_state(AppState::InGame).label("use_carnivore_brain").after("use_brain"));
     fixed_update.add_system(eat_berries.run_in_state(AppState::InGame).label("eat_berries").after("use_carnivore_brain"));
     fixed_update.add_system(spawn_berries.run_in_state(AppState::InGame).label("spawn_berries").after("eat_berries"));
 
@@ -353,49 +352,6 @@ fn use_brain(
                 herbivore_target_point.0 = target;
             }
             None => herbivore_target_point.0 = Vec3::ZERO,
-        }
-    }
-}
-
-/*
-// XXX: Rename
-fn use_carnivore_brain(
-    mut carnivore_query: Query<(&Transform, &mut TargetPoint), (With<Carnivore>, Without<Herbivore>)>,
-    herbivore_query: Query<&Transform, (With<Herbivore>, Without<Carnivore>)>,
-) {
-    for (carnivore_transform, mut carnivore_target_point) in carnivore_query.iter_mut() {
-        let mut min_dist = f32::MAX;
-        let mut target_herbivore_pos: Option<Vec3> = None;
-
-        for herbivore_transform in herbivore_query.iter() {
-            let dist =
-                (herbivore_transform.translation - carnivore_transform.translation).length_squared();
-            if dist < min_dist {
-                min_dist = dist;
-                target_herbivore_pos = Some(herbivore_transform.translation);
-            }
-        }
-
-        match target_herbivore_pos {
-            Some(target_pos) => {
-                carnivore_target_point.0 = target_pos - carnivore_transform.translation
-            }
-            None => carnivore_target_point.0 = Vec3::ZERO,
-        }
-    }
-}
-*/
-
-fn handle_collision(mut herbivore_query: Query<(&Transform, &mut MovingBody), With<Herbivore>>) {
-    let mut combinations = herbivore_query.iter_combinations_mut();
-    while let Some([(t1, mut v1), (t2, mut v2)]) = combinations.fetch_next() {
-        let t1_to_t2 = t2.translation - t1.translation;
-        let dist = t1_to_t2.length();
-        let threshold = 30.0;
-
-        if dist < threshold {
-            v1.curr_velocity -= (threshold - dist) * t1_to_t2.normalize_or_zero();
-            v2.curr_velocity += (threshold - dist) * t1_to_t2.normalize_or_zero();
         }
     }
 }
