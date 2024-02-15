@@ -12,14 +12,42 @@ const TIME_STEP_SEC: f32 = (TIME_STEP_MS as f32) / 1000.0;
 
 fn main() {
     let mut fixed_update = SystemStage::parallel();
-    fixed_update.add_system(handle_input.run_in_state(AppState::InGame).label("handle_input"));
+    fixed_update.add_system(
+        handle_input
+            .run_in_state(AppState::InGame)
+            .label("handle_input"),
+    );
 
-    fixed_update.add_system(update_velocity.run_in_state(AppState::InGame).label("update_velocity"));
-    fixed_update.add_system(apply_velocity.run_in_state(AppState::InGame).label("apply_velocity").after("update_velocity"));
+    fixed_update.add_system(
+        update_velocity
+            .run_in_state(AppState::InGame)
+            .label("update_velocity"),
+    );
+    fixed_update.add_system(
+        apply_velocity
+            .run_in_state(AppState::InGame)
+            .label("apply_velocity")
+            .after("update_velocity"),
+    );
 
-    fixed_update.add_system(use_brain.run_in_state(AppState::InGame).label("use_brain").after("apply_velocity"));
-    fixed_update.add_system(eat_berries.run_in_state(AppState::InGame).label("eat_berries").after("use_brain"));
-    fixed_update.add_system(spawn_berries.run_in_state(AppState::InGame).label("spawn_berries").after("eat_berries"));
+    fixed_update.add_system(
+        use_brain
+            .run_in_state(AppState::InGame)
+            .label("use_brain")
+            .after("apply_velocity"),
+    );
+    fixed_update.add_system(
+        eat_berries
+            .run_in_state(AppState::InGame)
+            .label("eat_berries")
+            .after("use_brain"),
+    );
+    fixed_update.add_system(
+        spawn_berries
+            .run_in_state(AppState::InGame)
+            .label("spawn_berries")
+            .after("eat_berries"),
+    );
 
     App::new()
         .add_plugins(DefaultPlugins)
@@ -221,8 +249,11 @@ fn handle_input(mut commands: Commands, keyboard_input: Res<Input<KeyCode>>) {
 
 fn update_velocity(mut query: Query<(&mut MovingBody, &TargetPoint)>) {
     for (mut moving_body, target_point) in query.iter_mut() {
-        moving_body.curr_acceleration = (target_point.0.normalize_or_zero() * moving_body.max_acceleration).clamp_length_max(TIME_STEP_SEC * moving_body.max_acceleration);
-        moving_body.curr_velocity = (moving_body.curr_velocity + moving_body.curr_acceleration).clamp_length_max(moving_body.max_speed);
+        moving_body.curr_acceleration = (target_point.0.normalize_or_zero()
+            * moving_body.max_acceleration)
+            .clamp_length_max(TIME_STEP_SEC * moving_body.max_acceleration);
+        moving_body.curr_velocity = (moving_body.curr_velocity + moving_body.curr_acceleration)
+            .clamp_length_max(moving_body.max_speed);
     }
 }
 
@@ -293,7 +324,10 @@ fn spawn_berries(
 }
 
 fn use_brain(
-    mut herbivore_query: Query<(&Transform, &MovingBody, &mut TargetPoint), (With<Herbivore>, Without<Berry>)>,
+    mut herbivore_query: Query<
+        (&Transform, &MovingBody, &mut TargetPoint),
+        (With<Herbivore>, Without<Berry>),
+    >,
     berry_query: Query<&Transform, (With<Berry>, Without<Herbivore>)>,
 ) {
     for (herbivore_transform, velocity, mut herbivore_target_point) in herbivore_query.iter_mut() {
@@ -319,7 +353,8 @@ fn use_brain(
                 // Unclear why this constant makes things better, but it prevents herbivores from
                 // oscillating to the left and right when chasing after berries.
                 let stability_constant = 0.8;
-                let target = target_pos + stability_constant * v_targ * t_estimate - herbivore_transform.translation;
+                let target = target_pos + stability_constant * v_targ * t_estimate
+                    - herbivore_transform.translation;
                 herbivore_target_point.0 = target;
             }
             None => herbivore_target_point.0 = Vec3::ZERO,
