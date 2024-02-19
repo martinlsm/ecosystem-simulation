@@ -1,5 +1,4 @@
 use bevy::{math::const_vec3, prelude::*, sprite::collide_aabb::collide};
-use iyes_loopless::prelude::*;
 use rand::Rng;
 use std::f32::consts::PI;
 
