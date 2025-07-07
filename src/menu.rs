@@ -2,8 +2,8 @@ use bevy::prelude::*;
 
 use crate::state::AppState;
 
-const NORMAL_BUTTON: Color = Color::rgb(0.15, 0.15, 0.15);
-const HOVERED_BUTTON: Color = Color::rgb(0.25, 0.25, 0.25);
+const NORMAL_BUTTON: Color = Color::srgb(0.15, 0.15, 0.15);
+const HOVERED_BUTTON: Color = Color::srgb(0.25, 0.25, 0.25);
 
 /// Use this component for entities that should be despawned upon state exit
 #[derive(Component)]
@@ -73,7 +73,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                         TextStyle {
                             font: asset_server.load("fonts/FiraSans-Bold.ttf"),
                             font_size: 40.0,
-                            color: Color::rgb(0.9, 0.9, 0.9),
+                            color: Color::srgb(0.9, 0.9, 0.9),
                         },
                     ));
                 });
