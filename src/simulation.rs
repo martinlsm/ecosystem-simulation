@@ -69,13 +69,13 @@ fn setup(
             SimulationComponent,
             Herbivore,
             Rotation(0.0),
-            SpriteBundle {
-                transform: Transform {
-                    translation: init_pos,
-                    scale: Vec3::new(4.0, 4.0, 1.0),
-                    ..default()
-                },
-                texture: asset_server.load("sprites/herbivore.png"),
+            Sprite {
+                image: asset_server.load("sprites/herbivore.png"),
+                custom_size: Some(Vec2::new(7.0 * 4.0, 16.0 * 4.0)),
+                ..default()
+            },
+            Transform {
+                translation: init_pos,
                 ..default()
             },
             MovingBody {
@@ -102,7 +102,7 @@ fn apply_velocity(mut query: Query<(&mut Rotation, &mut Transform, &MovingBody)>
                   time: Res<Time>) {
     for (mut rotation, mut transform, moving_body) in query.iter_mut() {
         // Update position.
-        transform.translation = transform.translation + moving_body.curr_velocity * time.delta_seconds();
+        transform.translation = transform.translation + moving_body.curr_velocity * time.delta_secs();
 
         // Update sprite rotation.
         let velocity = &moving_body.curr_velocity;
@@ -122,7 +122,7 @@ fn update_velocity(mut query: Query<(&mut MovingBody, &TargetPoint)>, time: Res<
     for (mut moving_body, target_point) in query.iter_mut() {
         moving_body.curr_acceleration = (target_point.0.normalize_or_zero()
             * moving_body.max_acceleration)
-            .clamp_length_max(time.delta_seconds() * moving_body.max_acceleration);
+            .clamp_length_max(time.delta_secs() * moving_body.max_acceleration);
         moving_body.curr_velocity = (moving_body.curr_velocity + moving_body.curr_acceleration)
             .clamp_length_max(moving_body.max_speed);
     }
@@ -145,15 +145,15 @@ fn spawn_berries(
         commands.spawn((
             SimulationComponent,
             Berry,
-            SpriteBundle {
-                transform: Transform {
-                    translation: init_pos_berry,
-                    scale: Vec3::new(4.0, 4.0, 1.0),
-                    ..default()
-                },
-                texture: asset_server.load("sprites/berry.png"),
+            Sprite {
+                image: asset_server.load("sprites/berry.png"),
+                custom_size: Some(Vec2::new(16.0, 16.0)),
                 ..default()
-            }
+            },
+            Transform {
+                translation: init_pos_berry,
+                ..default()
+            },
         ));
     }
 
