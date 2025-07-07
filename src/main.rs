@@ -8,7 +8,7 @@ use bevy::prelude::*;
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
+        .add_plugins(DefaultPlugins)
         .init_state::<AppState>()
         .add_systems(Startup, setup)
         .add_plugins((menu::menu_plugin, simulation::simulation_plugin))
@@ -16,5 +16,5 @@ fn main() {
 }
 
 fn setup(mut commands: Commands) {
-    commands.spawn(Camera2dBundle::default());
+    commands.spawn(Camera2d);
 }
