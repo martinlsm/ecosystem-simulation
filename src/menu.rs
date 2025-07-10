@@ -9,6 +9,11 @@ const HOVERED_BUTTON: Color = Color::srgb(0.25, 0.25, 0.25);
 #[derive(Component)]
 struct MenuComponent;
 
+#[derive(Resource)]
+struct MenuData {
+    button_entity: Entity,
+}
+
 pub fn menu_plugin(app: &mut App) {
     app.add_systems(OnEnter(AppState::Menu), setup)
         .add_systems(Update, button_system.run_if(in_state(AppState::Menu)))
@@ -37,51 +42,65 @@ fn button_system(
     }
 }
 
-fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
-    commands
+fn setup(mut commands: Commands) {
+    let button_entity = commands
         .spawn((
-            NodeBundle {
-                style: Style {
-                    width: Val::Percent(100.0),
-                    height: Val::Percent(100.0),
-                    align_items: AlignItems::Center,
-                    justify_content: JustifyContent::Center,
-                    ..default()
-                },
+            Node {
+                // center button
+                width: Val::Percent(100.),
+                height: Val::Percent(100.),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
                 ..default()
             },
-            MenuComponent,
-        ))
-        .with_children(|parent| {
-            parent
-                .spawn(ButtonBundle {
-                    style: Style {
-                        width: Val::Px(150.0),
-                        height: Val::Px(65.0),
-                        border: UiRect::all(Val::Px(5.0)),
-                        justify_content: JustifyContent::Center,
-                        align_items: AlignItems::Center,
+            children![(
+                Button,
+                Node {
+                    width: Val::Px(150.),
+                    height: Val::Px(65.),
+                    // horizontally center child text
+                    justify_content: JustifyContent::Center,
+                    // vertically center child text
+                    align_items: AlignItems::Center,
+                    ..default()
+                },
+                BackgroundColor(NORMAL_BUTTON),
+                children![(
+                    Text::new("Play"),
+                    TextFont {
+                        font_size: 33.0,
                         ..default()
                     },
-                    border_color: BorderColor(Color::BLACK),
-                    background_color: NORMAL_BUTTON.into(),
-                    ..default()
-                })
-                .with_children(|parent| {
-                    parent.spawn(TextBundle::from_section(
-                        "Start",
-                        TextStyle {
-                            font: asset_server.load("fonts/FiraSans-Bold.ttf"),
-                            font_size: 40.0,
-                            color: Color::srgb(0.9, 0.9, 0.9),
-                        },
-                    ));
-                });
-        });
+                    TextColor(Color::srgb(0.9, 0.9, 0.9)),
+                )],
+            )],
+        ))
+        .id();
+    commands.insert_resource(MenuData { button_entity });
 }
 
-fn exit(query: Query<Entity, With<MenuComponent>>, mut commands: Commands) {
-    for entity in &query {
-        commands.entity(entity).despawn_recursive();
+fn menu(
+    mut next_state: ResMut<NextState<AppState>>,
+    mut interaction_query: Query<
+        (&Interaction, &mut BackgroundColor),
+        (Changed<Interaction>, With<Button>),
+    >,
+) {
+    for (interaction, mut color) in &mut interaction_query {
+        match *interaction {
+            Interaction::Pressed => {
+                next_state.set(AppState::Simulation);
+            }
+            Interaction::Hovered => {
+                *color = HOVERED_BUTTON.into();
+            }
+            Interaction::None => {
+                *color = NORMAL_BUTTON.into();
+            }
+        }
     }
+}
+
+fn exit(mut commands: Commands, menu_data: Res<MenuData>) {
+    commands.entity(menu_data.button_entity).despawn();
 }
