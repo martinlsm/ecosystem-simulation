@@ -241,6 +241,6 @@ fn eat_berries(
 
 fn exit(query: Query<Entity, With<SimulationComponent>>, mut commands: Commands) {
     for entity in &query {
-        commands.entity(entity).despawn_recursive();
+        commands.entity(entity).despawn();
     }
 }

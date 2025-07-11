@@ -9,11 +9,6 @@ const HOVERED_BUTTON: Color = Color::srgb(0.25, 0.25, 0.25);
 #[derive(Component)]
 struct MenuComponent;
 
-#[derive(Resource)]
-struct MenuData {
-    button_entity: Entity,
-}
-
 pub fn menu_plugin(app: &mut App) {
     app.add_systems(OnEnter(AppState::Menu), setup)
         .add_systems(Update, button_system.run_if(in_state(AppState::Menu)))
@@ -43,7 +38,7 @@ fn button_system(
 }
 
 fn setup(mut commands: Commands) {
-    let button_entity = commands
+    commands
         .spawn((
             Node {
                 // center button
@@ -53,6 +48,7 @@ fn setup(mut commands: Commands) {
                 align_items: AlignItems::Center,
                 ..default()
             },
+            MenuComponent,
             children![(
                 Button,
                 Node {
@@ -74,33 +70,11 @@ fn setup(mut commands: Commands) {
                     TextColor(Color::srgb(0.9, 0.9, 0.9)),
                 )],
             )],
-        ))
-        .id();
-    commands.insert_resource(MenuData { button_entity });
+        ));
 }
 
-fn menu(
-    mut next_state: ResMut<NextState<AppState>>,
-    mut interaction_query: Query<
-        (&Interaction, &mut BackgroundColor),
-        (Changed<Interaction>, With<Button>),
-    >,
-) {
-    for (interaction, mut color) in &mut interaction_query {
-        match *interaction {
-            Interaction::Pressed => {
-                next_state.set(AppState::Simulation);
-            }
-            Interaction::Hovered => {
-                *color = HOVERED_BUTTON.into();
-            }
-            Interaction::None => {
-                *color = NORMAL_BUTTON.into();
-            }
-        }
+fn exit(query: Query<Entity, With<MenuComponent>>, mut commands: Commands) {
+    for entity in &query {
+        commands.entity(entity).despawn();
     }
-}
-
-fn exit(mut commands: Commands, menu_data: Res<MenuData>) {
-    commands.entity(menu_data.button_entity).despawn();
 }
