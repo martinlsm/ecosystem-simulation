@@ -8,7 +8,7 @@ use bevy::prelude::*;
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins)
+        .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
         .init_state::<AppState>()
         .add_systems(Startup, setup)
         .add_plugins((menu::menu_plugin, simulation::simulation_plugin))

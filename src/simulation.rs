@@ -69,7 +69,15 @@ fn setup(
             SimulationComponent,
             Herbivore,
             Rotation(0.0),
-            Sprite::from_image(asset_server.load("sprites/herbivore.png")),
+            Sprite {
+                image: asset_server.load("sprites/herbivore.png"),
+                custom_size: Some(Vec2::new(7.0 * 4.0, 16.0 * 4.0)),
+                ..default()
+            },
+            Transform {
+                translation: init_pos,
+                ..default()
+            },
             MovingBody {
                 curr_velocity: Vec3::ZERO,
                 max_speed: 200.0,
@@ -137,7 +145,15 @@ fn spawn_berries(
         commands.spawn((
             SimulationComponent,
             Berry,
-            Sprite::from_image(asset_server.load("sprites/berry.png")),
+            Sprite {
+                image: asset_server.load("sprites/berry.png"),
+                custom_size: Some(Vec2::new(16.0, 16.0)),
+                ..default()
+            },
+            Transform {
+                translation: init_pos_berry,
+                ..default()
+            },
         ));
     }
 
