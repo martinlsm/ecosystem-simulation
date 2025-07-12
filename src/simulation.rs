@@ -17,6 +17,13 @@ const HERBIVORE_SCALE_FACTOR: f32 = 4.0;
 const HERBIVORE_RENDER_HEIGHT: f32 = HERBIVORE_SPRITE_HEIGHT * HERBIVORE_SCALE_FACTOR;
 const HERBIVORE_RENDER_WIDTH: f32 = HERBIVORE_SPRITE_WIDTH * HERBIVORE_SCALE_FACTOR;
 
+const SCREEN_WIDTH: f32 = 1920.0;
+const SCREEN_HEIGHT: f32 = 1080.0;
+const PLAYABLE_AREA_X0: f32 = -(SCREEN_WIDTH / 2.0 - 350.0);
+const PLAYABLE_AREA_X1: f32 = SCREEN_WIDTH / 2.0 - 350.0;
+const PLAYABLE_AREA_Y0: f32 = -(SCREEN_HEIGHT / 2.0 - 200.0);
+const PLAYABLE_AREA_Y1: f32 = SCREEN_HEIGHT / 2.0 - 200.0;
+
 #[derive(Resource)]
 struct SimData {
     num_berries: u64,
@@ -73,10 +80,19 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
 
     for _ in 0..NUM_HERBIVORES {
         let init_pos = Vec3::new(
-            400.0 * rng.gen::<f32>() - 200.0,
-            400.0 * rng.gen::<f32>() - 200.0,
+            rng.gen_range(PLAYABLE_AREA_X0..PLAYABLE_AREA_X1) as f32,
+            rng.gen_range(PLAYABLE_AREA_Y0..PLAYABLE_AREA_Y1) as f32,
             2.0,
         );
+
+        commands.spawn((
+            SimulationComponent,
+            Sprite {
+                image: asset_server.load("sprites/forest.png"),
+                custom_size: Some(Vec2::new(SCREEN_WIDTH, SCREEN_HEIGHT)),
+                ..default()
+            },
+        ));
 
         commands.spawn((
             SimulationComponent,
@@ -147,8 +163,8 @@ fn spawn_berries(
 
     for _ in game_data.num_berries..game_data.max_berries {
         let init_pos_berry = Vec3::new(
-            400.0 * rng.gen::<f32>() - 200.0,
-            400.0 * rng.gen::<f32>() - 200.0,
+            rng.gen_range(PLAYABLE_AREA_X0..PLAYABLE_AREA_X1) as f32,
+            rng.gen_range(PLAYABLE_AREA_Y0..PLAYABLE_AREA_Y1) as f32,
             1.0,
         );
 
