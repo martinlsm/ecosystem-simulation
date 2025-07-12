@@ -75,7 +75,7 @@ pub fn simulation_plugin(app: &mut App) {
         });
 }
 
-fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
+fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut game_data: ResMut<SimData>) {
     let mut rng = rand::thread_rng();
 
     for _ in 0..NUM_HERBIVORES {
@@ -115,6 +115,8 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             },
             TargetPoint(bevy::math::vec3(0.0, 0.0, 0.0)),
         ));
+
+        game_data.num_berries = 0;
     }
 }
 
