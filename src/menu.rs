@@ -38,39 +38,38 @@ fn button_system(
 }
 
 fn setup(mut commands: Commands) {
-    commands
-        .spawn((
+    commands.spawn((
+        Node {
+            // center button
+            width: Val::Percent(100.),
+            height: Val::Percent(100.),
+            justify_content: JustifyContent::Center,
+            align_items: AlignItems::Center,
+            ..default()
+        },
+        MenuComponent,
+        children![(
+            Button,
             Node {
-                // center button
-                width: Val::Percent(100.),
-                height: Val::Percent(100.),
+                width: Val::Px(150.),
+                height: Val::Px(65.),
+                // horizontally center child text
                 justify_content: JustifyContent::Center,
+                // vertically center child text
                 align_items: AlignItems::Center,
                 ..default()
             },
-            MenuComponent,
+            BackgroundColor(NORMAL_BUTTON),
             children![(
-                Button,
-                Node {
-                    width: Val::Px(150.),
-                    height: Val::Px(65.),
-                    // horizontally center child text
-                    justify_content: JustifyContent::Center,
-                    // vertically center child text
-                    align_items: AlignItems::Center,
+                Text::new("Play"),
+                TextFont {
+                    font_size: 33.0,
                     ..default()
                 },
-                BackgroundColor(NORMAL_BUTTON),
-                children![(
-                    Text::new("Play"),
-                    TextFont {
-                        font_size: 33.0,
-                        ..default()
-                    },
-                    TextColor(Color::srgb(0.9, 0.9, 0.9)),
-                )],
+                TextColor(Color::srgb(0.9, 0.9, 0.9)),
             )],
-        ));
+        )],
+    ));
 }
 
 fn exit(query: Query<Entity, With<MenuComponent>>, mut commands: Commands) {

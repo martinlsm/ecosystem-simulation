@@ -2,11 +2,20 @@ use std::f32::consts::PI;
 
 use crate::state::AppState;
 
-use bevy::{math::bounding::{Aabb2d, IntersectsVolume}, prelude::*};
+use bevy::{
+    math::bounding::{Aabb2d, IntersectsVolume},
+    prelude::*,
+};
 use rand::Rng;
 
 const NUM_HERBIVORES: usize = 3;
 const MAX_BERRIES: u64 = 10;
+
+const HERBIVORE_SPRITE_HEIGHT: f32 = 16.0;
+const HERBIVORE_SPRITE_WIDTH: f32 = 7.0;
+const HERBIVORE_SCALE_FACTOR: f32 = 4.0;
+const HERBIVORE_RENDER_HEIGHT: f32 = HERBIVORE_SPRITE_HEIGHT * HERBIVORE_SCALE_FACTOR;
+const HERBIVORE_RENDER_WIDTH: f32 = HERBIVORE_SPRITE_WIDTH * HERBIVORE_SCALE_FACTOR;
 
 #[derive(Resource)]
 struct SimData {
@@ -40,22 +49,26 @@ struct TargetPoint(Vec3);
 pub fn simulation_plugin(app: &mut App) {
     app.add_systems(OnEnter(AppState::Simulation), setup)
         .add_systems(OnExit(AppState::Simulation), exit)
-     .add_systems(Update, handle_input.run_if(in_state(AppState::Simulation)))
-     .add_systems(Update, apply_velocity.run_if(in_state(AppState::Simulation)))
-     .add_systems(Update, spawn_berries.run_if(in_state(AppState::Simulation)))
-     .add_systems(Update, eat_berries.run_if(in_state(AppState::Simulation)))
-     .add_systems(Update, update_velocity.run_if(in_state(AppState::Simulation)))
-     .add_systems(Update, use_brain.run_if(in_state(AppState::Simulation)))
-    .insert_resource(SimData {
-        num_berries: 0,
-        max_berries: MAX_BERRIES,
-    });
+        .add_systems(Update, handle_input.run_if(in_state(AppState::Simulation)))
+        .add_systems(
+            Update,
+            apply_velocity.run_if(in_state(AppState::Simulation)),
+        )
+        .add_systems(Update, spawn_berries.run_if(in_state(AppState::Simulation)))
+        .add_systems(Update, eat_berries.run_if(in_state(AppState::Simulation)))
+        .add_systems(
+            Update,
+            update_velocity.run_if(in_state(AppState::Simulation)),
+        )
+        .add_systems(Update, repel_bodies.run_if(in_state(AppState::Simulation)))
+        .add_systems(Update, use_brain.run_if(in_state(AppState::Simulation)))
+        .insert_resource(SimData {
+            num_berries: 0,
+            max_berries: MAX_BERRIES,
+        });
 }
 
-fn setup(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-) {
+fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     let mut rng = rand::thread_rng();
 
     for _ in 0..NUM_HERBIVORES {
@@ -71,7 +84,7 @@ fn setup(
             Rotation(0.0),
             Sprite {
                 image: asset_server.load("sprites/herbivore.png"),
-                custom_size: Some(Vec2::new(7.0 * 4.0, 16.0 * 4.0)),
+                custom_size: Some(Vec2::new(HERBIVORE_RENDER_WIDTH, HERBIVORE_RENDER_HEIGHT)),
                 ..default()
             },
             Transform {
@@ -89,20 +102,17 @@ fn setup(
     }
 }
 
-fn handle_input(
-    keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut state: ResMut<NextState<AppState>>,
-) {
+fn handle_input(keyboard_input: Res<ButtonInput<KeyCode>>, mut state: ResMut<NextState<AppState>>) {
     if keyboard_input.just_pressed(KeyCode::Escape) {
         state.set(AppState::Menu);
     }
 }
 
-fn apply_velocity(mut query: Query<(&mut Rotation, &mut Transform, &MovingBody)>,
-                  time: Res<Time>) {
+fn apply_velocity(mut query: Query<(&mut Rotation, &mut Transform, &MovingBody)>, time: Res<Time>) {
     for (mut rotation, mut transform, moving_body) in query.iter_mut() {
         // Update position.
-        transform.translation = transform.translation + moving_body.curr_velocity * time.delta_secs();
+        transform.translation =
+            transform.translation + moving_body.curr_velocity * time.delta_secs();
 
         // Update sprite rotation.
         let velocity = &moving_body.curr_velocity;
@@ -219,14 +229,8 @@ fn eat_berries(
                 );
             let mouth_size = herbivore_transform.scale.truncate() * Vec2::new(4.0, 2.0);
 
-            let berry = Aabb2d::new(
-                berry_transform.translation.truncate(),
-                berry_size
-            );
-            let mouth = Aabb2d::new(
-                mouth_translation.truncate(),
-                mouth_size,
-            );
+            let berry = Aabb2d::new(berry_transform.translation.truncate(), berry_size);
+            let mouth = Aabb2d::new(mouth_translation.truncate(), mouth_size);
 
             if berry.intersects(&mouth) {
                 commands.entity(berry_entity).despawn();
@@ -236,6 +240,38 @@ fn eat_berries(
                 break;
             }
         }
+    }
+}
+
+fn repel_bodies(mut body_query: Query<(&mut Transform, &mut MovingBody)>, time: Res<Time>) {
+    let mut combinations = body_query.iter_combinations_mut();
+    while let Some([mut t1, mut t2]) = combinations.fetch_next() {
+        // Bounds before collision force is applied.
+        const COLLISION_RADIUS_SQUARED: f32 = (HERBIVORE_RENDER_HEIGHT
+            + HERBIVORE_RENDER_WIDTH / 2.0)
+            * (HERBIVORE_RENDER_HEIGHT + HERBIVORE_RENDER_WIDTH / 2.0);
+
+        // Strength of the collision force.
+        const FORCE_CONSTANT: f32 = 500000.0;
+
+        let p1: Vec3 = t1.0.as_mut().translation;
+        let p2: Vec3 = t2.0.as_mut().translation;
+        let squared_dist = p1.distance_squared(p2);
+
+        let force = if squared_dist < COLLISION_RADIUS_SQUARED {
+            FORCE_CONSTANT / (squared_dist + f32::EPSILON)
+        } else {
+            0.0
+        };
+
+        let body1_push_dir: Vec3 = (p1 - p2).normalize_or_zero() * force * time.delta_secs();
+        let body2_push_dir: Vec3 = (p1 - p2).normalize_or_zero() * force * time.delta_secs();
+
+        let moving_body1 = t1.1.as_mut();
+        moving_body1.curr_velocity += body1_push_dir;
+
+        let body2 = t1.1.as_mut();
+        body2.curr_velocity += body2_push_dir;
     }
 }
 
