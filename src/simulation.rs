@@ -8,8 +8,10 @@ use bevy::{
 };
 use rand::Rng;
 
-const NUM_HERBIVORES: usize = 3;
+const NUM_HERBIVORES: usize = 100;
 const MAX_BERRIES: u64 = 10;
+
+const BERRY_FULLNESS_GAIN: f32 = 40.0;
 
 const HERBIVORE_SPRITE_HEIGHT: f32 = 16.0;
 const HERBIVORE_SPRITE_WIDTH: f32 = 7.0;
@@ -39,6 +41,14 @@ struct MovingBody {
 }
 
 #[derive(Component)]
+struct Hunger {
+    curr_fullness: f32,
+    max_fullness: f32,
+    drain_per_unit_traveled: f32,
+    last_sampled_pos: Vec3,
+}
+
+#[derive(Component)]
 struct SimulationComponent;
 
 #[derive(Component)]
@@ -46,6 +56,9 @@ struct Rotation(f32);
 
 #[derive(Component)]
 struct Herbivore;
+
+#[derive(Component)]
+struct HerbivoreCorpse;
 
 #[derive(Component)]
 struct Berry;
@@ -60,6 +73,11 @@ pub fn simulation_plugin(app: &mut App) {
         .add_systems(
             Update,
             apply_velocity.run_if(in_state(AppState::Simulation)),
+        )
+        .add_systems(Update, hunger_drain.run_if(in_state(AppState::Simulation)))
+        .add_systems(
+            Update,
+            kill_starved_units.run_if(in_state(AppState::Simulation)),
         )
         .add_systems(Update, spawn_berries.run_if(in_state(AppState::Simulation)))
         .add_systems(Update, eat_berries.run_if(in_state(AppState::Simulation)))
@@ -112,6 +130,12 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut game_data: 
                 max_speed: 200.0,
                 curr_acceleration: Vec3::ZERO,
                 max_acceleration: 1000.0,
+            },
+            Hunger {
+                curr_fullness: 100.0,
+                max_fullness: 100.0,
+                drain_per_unit_traveled: 5.0 / 200.0,
+                last_sampled_pos: init_pos,
             },
             TargetPoint(bevy::math::vec3(0.0, 0.0, 0.0)),
         ));
@@ -231,12 +255,15 @@ fn eat_berries(
     mut commands: Commands,
     mut game_data: ResMut<SimData>,
     berry_query: Query<(Entity, &mut Transform), (With<Berry>, Without<Herbivore>)>,
-    herbivore_query: Query<(&mut Transform, &Rotation), (With<Herbivore>, Without<Berry>)>,
+    mut herbivore_query: Query<
+        (&mut Transform, &Rotation, &mut Hunger),
+        (With<Herbivore>, Without<Berry>),
+    >,
 ) {
     for (berry_entity, berry_transform) in berry_query.iter() {
         let berry_size = berry_transform.scale.truncate() * Vec2::new(2.0, 2.0);
 
-        for (herbivore_transform, rotation) in herbivore_query.iter() {
+        for (herbivore_transform, rotation, mut hunger) in herbivore_query.iter_mut() {
             // TODO: Extract these parameters to some form of config file/code.
             let mouth_offset = herbivore_transform.scale.truncate() * 5.0;
             let mouth_translation = herbivore_transform.translation
@@ -253,6 +280,13 @@ fn eat_berries(
             if berry.intersects(&mouth) {
                 commands.entity(berry_entity).despawn();
                 game_data.num_berries -= 1;
+
+                let new_fullness = hunger.curr_fullness + BERRY_FULLNESS_GAIN;
+                if new_fullness > hunger.max_fullness {
+                    hunger.curr_fullness = hunger.max_fullness;
+                } else {
+                    hunger.curr_fullness = new_fullness;
+                }
 
                 // Break here so that no other herbivore can eat the same berry during the same frame.
                 break;
@@ -290,6 +324,45 @@ fn repel_bodies(mut body_query: Query<(&mut Transform, &mut MovingBody)>, time: 
 
         let body2 = t1.1.as_mut();
         body2.curr_velocity += body2_push_dir;
+    }
+}
+
+fn hunger_drain(mut query: Query<(&Transform, &mut Hunger)>) {
+    for (transform, mut hunger) in query.iter_mut() {
+        let dist = hunger.last_sampled_pos.distance(transform.translation);
+        hunger.last_sampled_pos = transform.translation;
+
+        hunger.curr_fullness -= dist * hunger.drain_per_unit_traveled;
+    }
+}
+
+fn kill_starved_units(
+    mut commands: Commands,
+    query: Query<(Entity, &Hunger, &Transform, &Rotation)>,
+    asset_server: Res<AssetServer>,
+) {
+    for (entity, hunger, transform, rotation) in query.iter() {
+        if hunger.curr_fullness <= 0.0 {
+            // Spawn sprite of the corpse.
+            commands.spawn((
+                SimulationComponent,
+                HerbivoreCorpse,
+                Rotation(rotation.0),
+                Sprite {
+                    image: asset_server.load("sprites/herbivore_corpse.png"),
+                    custom_size: Some(Vec2::new(HERBIVORE_RENDER_WIDTH, HERBIVORE_RENDER_HEIGHT)),
+                    ..default()
+                },
+                Transform {
+                    translation: transform.translation,
+                    rotation: Quat::from_rotation_z(rotation.0),
+                    ..default()
+                },
+            ));
+
+            // Despawn the living sprite.
+            commands.entity(entity).despawn();
+        }
     }
 }
 
