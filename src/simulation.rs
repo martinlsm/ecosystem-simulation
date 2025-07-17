@@ -220,11 +220,8 @@ fn spawn_berries(
 }
 
 fn use_brain(
-    mut herbivore_query: Query<
-        (&Transform, &MovingBody, &mut TargetPoint),
-        (With<Herbivore>, Without<Berry>),
-    >,
-    berry_query: Query<&Transform, (With<Berry>, Without<Herbivore>)>,
+    mut herbivore_query: Query<(&Transform, &MovingBody, &mut TargetPoint), (With<Herbivore>,)>,
+    berry_query: Query<&Transform, (With<Berry>,)>,
 ) {
     for (herbivore_transform, velocity, mut herbivore_target_point) in herbivore_query.iter_mut() {
         let mut min_dist = f32::MAX;
