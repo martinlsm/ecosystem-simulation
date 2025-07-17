@@ -74,6 +74,10 @@ pub fn simulation_plugin(app: &mut App) {
             Update,
             apply_velocity.run_if(in_state(AppState::Simulation)),
         )
+        .add_systems(
+            Update,
+            apply_rotation.run_if(in_state(AppState::Simulation)),
+        )
         .add_systems(Update, hunger_drain.run_if(in_state(AppState::Simulation)))
         .add_systems(
             Update,
@@ -150,13 +154,16 @@ fn handle_input(keyboard_input: Res<ButtonInput<KeyCode>>, mut state: ResMut<Nex
     }
 }
 
-fn apply_velocity(mut query: Query<(&mut Rotation, &mut Transform, &MovingBody)>, time: Res<Time>) {
-    for (mut rotation, mut transform, moving_body) in query.iter_mut() {
+fn apply_velocity(mut query: Query<(&mut Transform, &MovingBody)>, time: Res<Time>) {
+    for (mut transform, moving_body) in query.iter_mut() {
         // Update position.
         transform.translation =
             transform.translation + moving_body.curr_velocity * time.delta_secs();
+    }
+}
 
-        // Update sprite rotation.
+fn apply_rotation(mut query: Query<(&mut Rotation, &mut Transform, &MovingBody)>) {
+    for (mut rotation, mut transform, moving_body) in query.iter_mut() {
         let velocity = &moving_body.curr_velocity;
         if velocity.length() > 0.001 {
             let mut angle = (velocity.y / velocity.x).atan() - PI / 2.0;
