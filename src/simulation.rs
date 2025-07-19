@@ -8,7 +8,7 @@ use bevy::{
 };
 use rand::Rng;
 
-const NUM_CARNIVORES: usize = 1;
+const NUM_ZYRTHIDS: usize = 1;
 const NUM_FERNWORMS: usize = 10;
 const MAX_BERRIES: u64 = 10;
 
@@ -24,11 +24,11 @@ const FERNWORM_SCALE_FACTOR: f32 = 4.0;
 const FERNWORM_RENDER_HEIGHT: f32 = (FERNWORM_SPRITE_HEIGHT as f32) * FERNWORM_SCALE_FACTOR;
 const FERNWORM_RENDER_WIDTH: f32 = (FERNWORM_SPRITE_WIDTH as f32) * FERNWORM_SCALE_FACTOR;
 
-const CARNIVORE_SPRITE_HEIGHT: u32 = 25;
-const CARNIVORE_SPRITE_WIDTH: u32 = 11;
-const CARNIVORE_SCALE_FACTOR: f32 = 4.0;
-const CARNIVORE_RENDER_HEIGHT: f32 = (CARNIVORE_SPRITE_HEIGHT as f32) * CARNIVORE_SCALE_FACTOR;
-const CARNIVORE_RENDER_WIDTH: f32 = (CARNIVORE_SPRITE_WIDTH as f32) * CARNIVORE_SCALE_FACTOR;
+const ZYRTHID_SPRITE_HEIGHT: u32 = 25;
+const ZYRTHID_SPRITE_WIDTH: u32 = 11;
+const ZYRTHID_SCALE_FACTOR: f32 = 4.0;
+const ZYRTHID_RENDER_HEIGHT: f32 = (ZYRTHID_SPRITE_HEIGHT as f32) * ZYRTHID_SCALE_FACTOR;
+const ZYRTHID_RENDER_WIDTH: f32 = (ZYRTHID_SPRITE_WIDTH as f32) * ZYRTHID_SCALE_FACTOR;
 
 const SCREEN_WIDTH: f32 = 1920.0;
 const SCREEN_HEIGHT: f32 = 1080.0;
@@ -69,7 +69,7 @@ struct Rotation(f32);
 struct Fernworm;
 
 #[derive(Component)]
-struct Carnivore;
+struct Zyrthid;
 
 #[derive(Component)]
 struct FernwormCorpse;
@@ -108,7 +108,7 @@ pub fn simulation_plugin(app: &mut App) {
         .add_systems(Update, use_brain.run_if(in_state(AppState::Simulation)))
         .add_systems(
             Update,
-            use_carnivore_brain.run_if(in_state(AppState::Simulation)),
+            use_zyrthid_brain.run_if(in_state(AppState::Simulation)),
         )
         .insert_resource(SimData {
             num_berries: 0,
@@ -164,7 +164,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut game_data: 
         ));
     }
 
-    for _ in 0..NUM_CARNIVORES {
+    for _ in 0..NUM_ZYRTHIDS {
         let init_pos = Vec3::new(
             rng.gen_range(PLAYABLE_AREA_X0..PLAYABLE_AREA_X1) as f32,
             rng.gen_range(PLAYABLE_AREA_Y0..PLAYABLE_AREA_Y1) as f32,
@@ -173,11 +173,11 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut game_data: 
 
         commands.spawn((
             SimulationComponent,
-            Carnivore,
+            Zyrthid,
             Rotation(0.0),
             Sprite {
-                image: asset_server.load("sprites/carnivore.png"),
-                custom_size: Some(Vec2::new(CARNIVORE_RENDER_WIDTH, CARNIVORE_RENDER_HEIGHT)),
+                image: asset_server.load("sprites/zyrthid.png"),
+                custom_size: Some(Vec2::new(ZYRTHID_RENDER_WIDTH, ZYRTHID_RENDER_HEIGHT)),
                 ..default()
             },
             Transform {
@@ -314,17 +314,17 @@ fn use_brain(
     }
 }
 
-fn use_carnivore_brain(
-    mut carnivore_query: Query<(&Transform, &MovingBody, &mut TargetPoint), (With<Carnivore>,)>,
+fn use_zyrthid_brain(
+    mut zyrthid_query: Query<(&Transform, &MovingBody, &mut TargetPoint), (With<Zyrthid>,)>,
     fernworm_query: Query<&Transform, With<Fernworm>>,
 ) {
-    for (carnivore_transform, carnivore_body, mut target_point) in carnivore_query.iter_mut() {
+    for (zyrthid_transform, zyrthid_body, mut target_point) in zyrthid_query.iter_mut() {
         let mut min_dist = f32::MAX;
         let mut target_pos: Option<Vec3> = None;
 
         for fernworm_transform in fernworm_query.iter() {
             let dist =
-                (carnivore_transform.translation - fernworm_transform.translation).length_squared();
+                (zyrthid_transform.translation - fernworm_transform.translation).length_squared();
             if dist < min_dist {
                 min_dist = dist;
                 target_pos = Some(fernworm_transform.translation);
@@ -334,8 +334,8 @@ fn use_carnivore_brain(
         match target_pos {
             Some(target_pos) => {
                 // Algorithm taken from: https://gamedev.stackexchange.com/questions/17313/how-does-one-prevent-homing-missiles-from-orbiting-their-targets
-                let v_targ = -carnivore_body.curr_velocity;
-                let s = carnivore_transform.translation - target_pos;
+                let v_targ = -zyrthid_body.curr_velocity;
+                let s = zyrthid_transform.translation - target_pos;
                 let t_estimate = s.length() / (v_targ.length() + f32::EPSILON);
 
                 // Unclear why this constant makes things better, but it
@@ -343,7 +343,7 @@ fn use_carnivore_brain(
                 // targets.
                 let stability_constant = 0.8;
                 let target = target_pos + stability_constant * v_targ * t_estimate
-                    - carnivore_transform.translation;
+                    - zyrthid_transform.translation;
                 target_point.0 = Some(target);
             }
             None => target_point.0 = None,
@@ -399,25 +399,24 @@ fn eat_berries(
 
 fn eat_fernworms(
     mut commands: Commands,
-    fernworm_query: Query<(Entity, &mut Transform), (With<Fernworm>, Without<Carnivore>)>,
-    mut carnivore_query: Query<(&mut Transform, &Rotation, &mut Hunger), With<Carnivore>>,
+    fernworm_query: Query<(Entity, &mut Transform), (With<Fernworm>, Without<Zyrthid>)>,
+    mut zyrthid_query: Query<(&mut Transform, &Rotation, &mut Hunger), With<Zyrthid>>,
 ) {
     for (fernworm_entity, fernworm_transform) in fernworm_query.iter() {
         // fernworm_RENDER_WIDTH is intentionally used in both dimensions.
         let fernworm_size = fernworm_transform.scale.truncate()
             * Vec2::new(FERNWORM_RENDER_WIDTH / 2.0, FERNWORM_RENDER_WIDTH / 2.0);
 
-        for (carnivore_transform, rotation, mut hunger) in carnivore_query.iter_mut() {
+        for (zyrthid_transform, rotation, mut hunger) in zyrthid_query.iter_mut() {
             // TODO: Extract these parameters to some form of config file/code.
-            let mouth_offset =
-                carnivore_transform.scale.truncate()[1] * CARNIVORE_RENDER_HEIGHT / 3.0;
-            let mouth_translation = carnivore_transform.translation
+            let mouth_offset = zyrthid_transform.scale.truncate()[1] * ZYRTHID_RENDER_HEIGHT / 3.0;
+            let mouth_translation = zyrthid_transform.translation
                 + Vec3::new(
                     -rotation.0.sin() * mouth_offset,
                     rotation.0.cos() * mouth_offset,
                     0.0,
                 );
-            let mouth_size = carnivore_transform.scale.truncate() * Vec2::new(3.0, 3.0);
+            let mouth_size = zyrthid_transform.scale.truncate() * Vec2::new(3.0, 3.0);
 
             let fernworm = Aabb2d::new(fernworm_transform.translation.truncate(), fernworm_size);
             let mouth = Aabb2d::new(mouth_translation.truncate(), mouth_size);
