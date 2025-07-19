@@ -8,16 +8,27 @@ use bevy::{
 };
 use rand::Rng;
 
-const NUM_HERBIVORES: usize = 100;
+const NUM_CARNIVORES: usize = 1;
+const NUM_HERBIVORES: usize = 10;
 const MAX_BERRIES: u64 = 10;
 
 const BERRY_FULLNESS_GAIN: f32 = 40.0;
+const HERBIVORE_FULLNESS_GAIN: f32 = 80.0;
 
-const HERBIVORE_SPRITE_HEIGHT: f32 = 16.0;
-const HERBIVORE_SPRITE_WIDTH: f32 = 7.0;
+const BERRY_RENDER_HEIGHT: f32 = 16.0;
+const BERRY_RENDER_WIDTH: f32 = 16.0;
+
+const HERBIVORE_SPRITE_HEIGHT: u32 = 16;
+const HERBIVORE_SPRITE_WIDTH: u32 = 7;
 const HERBIVORE_SCALE_FACTOR: f32 = 4.0;
-const HERBIVORE_RENDER_HEIGHT: f32 = HERBIVORE_SPRITE_HEIGHT * HERBIVORE_SCALE_FACTOR;
-const HERBIVORE_RENDER_WIDTH: f32 = HERBIVORE_SPRITE_WIDTH * HERBIVORE_SCALE_FACTOR;
+const HERBIVORE_RENDER_HEIGHT: f32 = (HERBIVORE_SPRITE_HEIGHT as f32) * HERBIVORE_SCALE_FACTOR;
+const HERBIVORE_RENDER_WIDTH: f32 = (HERBIVORE_SPRITE_WIDTH as f32) * HERBIVORE_SCALE_FACTOR;
+
+const CARNIVORE_SPRITE_HEIGHT: u32 = 25;
+const CARNIVORE_SPRITE_WIDTH: u32 = 11;
+const CARNIVORE_SCALE_FACTOR: f32 = 4.0;
+const CARNIVORE_RENDER_HEIGHT: f32 = (CARNIVORE_SPRITE_HEIGHT as f32) * CARNIVORE_SCALE_FACTOR;
+const CARNIVORE_RENDER_WIDTH: f32 = (CARNIVORE_SPRITE_WIDTH as f32) * CARNIVORE_SCALE_FACTOR;
 
 const SCREEN_WIDTH: f32 = 1920.0;
 const SCREEN_HEIGHT: f32 = 1080.0;
@@ -58,13 +69,16 @@ struct Rotation(f32);
 struct Herbivore;
 
 #[derive(Component)]
+struct Carnivore;
+
+#[derive(Component)]
 struct HerbivoreCorpse;
 
 #[derive(Component)]
 struct Berry;
 
 #[derive(Component)]
-struct TargetPoint(Vec3);
+struct TargetPoint(Option<Vec3>);
 
 pub fn simulation_plugin(app: &mut App) {
     app.add_systems(OnEnter(AppState::Simulation), setup)
@@ -85,12 +99,17 @@ pub fn simulation_plugin(app: &mut App) {
         )
         .add_systems(Update, spawn_berries.run_if(in_state(AppState::Simulation)))
         .add_systems(Update, eat_berries.run_if(in_state(AppState::Simulation)))
+        .add_systems(Update, eat_herbivores.run_if(in_state(AppState::Simulation)))
         .add_systems(
             Update,
             update_velocity.run_if(in_state(AppState::Simulation)),
         )
         .add_systems(Update, repel_bodies.run_if(in_state(AppState::Simulation)))
         .add_systems(Update, use_brain.run_if(in_state(AppState::Simulation)))
+        .add_systems(
+            Update,
+            use_carnivore_brain.run_if(in_state(AppState::Simulation)),
+        )
         .insert_resource(SimData {
             num_berries: 0,
             max_berries: MAX_BERRIES,
@@ -100,21 +119,21 @@ pub fn simulation_plugin(app: &mut App) {
 fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut game_data: ResMut<SimData>) {
     let mut rng = rand::thread_rng();
 
+    commands.spawn((
+        SimulationComponent,
+        Sprite {
+            image: asset_server.load("sprites/forest.png"),
+            custom_size: Some(Vec2::new(SCREEN_WIDTH, SCREEN_HEIGHT)),
+            ..default()
+        },
+    ));
+
     for _ in 0..NUM_HERBIVORES {
         let init_pos = Vec3::new(
             rng.gen_range(PLAYABLE_AREA_X0..PLAYABLE_AREA_X1) as f32,
             rng.gen_range(PLAYABLE_AREA_Y0..PLAYABLE_AREA_Y1) as f32,
             2.0,
         );
-
-        commands.spawn((
-            SimulationComponent,
-            Sprite {
-                image: asset_server.load("sprites/forest.png"),
-                custom_size: Some(Vec2::new(SCREEN_WIDTH, SCREEN_HEIGHT)),
-                ..default()
-            },
-        ));
 
         commands.spawn((
             SimulationComponent,
@@ -141,11 +160,47 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut game_data: 
                 drain_per_unit_traveled: 5.0 / 200.0,
                 last_sampled_pos: init_pos,
             },
-            TargetPoint(bevy::math::vec3(0.0, 0.0, 0.0)),
+            TargetPoint(None),
         ));
-
-        game_data.num_berries = 0;
     }
+
+    for _ in 0..NUM_CARNIVORES {
+        let init_pos = Vec3::new(
+            rng.gen_range(PLAYABLE_AREA_X0..PLAYABLE_AREA_X1) as f32,
+            rng.gen_range(PLAYABLE_AREA_Y0..PLAYABLE_AREA_Y1) as f32,
+            1.5,
+        );
+
+        commands.spawn((
+            SimulationComponent,
+            Carnivore,
+            Rotation(0.0),
+            Sprite {
+                image: asset_server.load("sprites/carnivore.png"),
+                custom_size: Some(Vec2::new(CARNIVORE_RENDER_WIDTH, CARNIVORE_RENDER_HEIGHT)),
+                ..default()
+            },
+            Transform {
+                translation: init_pos,
+                ..default()
+            },
+            MovingBody {
+                curr_velocity: Vec3::ZERO,
+                max_speed: 150.0,
+                curr_acceleration: Vec3::ZERO,
+                max_acceleration: 1000.0,
+            },
+            Hunger {
+                curr_fullness: 200.0,
+                max_fullness: 200.0,
+                drain_per_unit_traveled: 5.0 / 250.0,
+                last_sampled_pos: init_pos,
+            },
+            TargetPoint(None),
+        ));
+    }
+
+    game_data.num_berries = 0;
 }
 
 fn handle_input(keyboard_input: Res<ButtonInput<KeyCode>>, mut state: ResMut<NextState<AppState>>) {
@@ -179,11 +234,15 @@ fn apply_rotation(mut query: Query<(&mut Rotation, &mut Transform, &MovingBody)>
 
 fn update_velocity(mut query: Query<(&mut MovingBody, &TargetPoint)>, time: Res<Time>) {
     for (mut moving_body, target_point) in query.iter_mut() {
-        moving_body.curr_acceleration = (target_point.0.normalize_or_zero()
-            * moving_body.max_acceleration)
-            .clamp_length_max(time.delta_secs() * moving_body.max_acceleration);
-        moving_body.curr_velocity = (moving_body.curr_velocity + moving_body.curr_acceleration)
-            .clamp_length_max(moving_body.max_speed);
+        if let Some(p) = target_point.0 {
+            moving_body.curr_acceleration = (p.normalize_or_zero()
+                        * moving_body.max_acceleration)
+                        .clamp_length_max(time.delta_secs() * moving_body.max_acceleration);
+                    moving_body.curr_velocity = (moving_body.curr_velocity + moving_body.curr_acceleration)
+                        .clamp_length_max(moving_body.max_speed);
+        } else {
+            moving_body.curr_acceleration = -moving_body.curr_velocity
+        }
     }
 }
 
@@ -206,7 +265,7 @@ fn spawn_berries(
             Berry,
             Sprite {
                 image: asset_server.load("sprites/berry.png"),
-                custom_size: Some(Vec2::new(16.0, 16.0)),
+                custom_size: Some(Vec2::new(BERRY_RENDER_WIDTH, BERRY_RENDER_HEIGHT)),
                 ..default()
             },
             Transform {
@@ -220,10 +279,11 @@ fn spawn_berries(
 }
 
 fn use_brain(
-    mut herbivore_query: Query<(&Transform, &MovingBody, &mut TargetPoint), (With<Herbivore>,)>,
-    berry_query: Query<&Transform, (With<Berry>,)>,
+    mut herbivore_query: Query<(&Transform, &MovingBody, &mut TargetPoint), With<Herbivore>>,
+    berry_query: Query<&Transform, With<Berry>>,
 ) {
-    for (herbivore_transform, velocity, mut herbivore_target_point) in herbivore_query.iter_mut() {
+    for (herbivore_transform, moving_body, mut herbivore_target_point) in herbivore_query.iter_mut()
+    {
         let mut min_dist = f32::MAX;
         let mut target_berry_pos: Option<Vec3> = None;
 
@@ -239,18 +299,56 @@ fn use_brain(
         match target_berry_pos {
             Some(target_pos) => {
                 // Algorithm taken from: https://gamedev.stackexchange.com/questions/17313/how-does-one-prevent-homing-missiles-from-orbiting-their-targets
-                let v_targ = -velocity.curr_velocity;
+                let v_targ = -moving_body.curr_velocity;
                 let s = herbivore_transform.translation - target_pos;
                 let t_estimate = s.length() / (v_targ.length() + f32::EPSILON);
 
-                // Unclear why this constant makes things better, but it prevents herbivores from
-                // oscillating to the left and right when chasing after berries.
+                // Unclear why this constant makes things better, but it
+                // prevents oscillating to the left and right when chasing after
+                // targets.
                 let stability_constant = 0.8;
                 let target = target_pos + stability_constant * v_targ * t_estimate
                     - herbivore_transform.translation;
-                herbivore_target_point.0 = target;
+                herbivore_target_point.0 = Some(target);
             }
-            None => herbivore_target_point.0 = Vec3::ZERO,
+            None => herbivore_target_point.0 = None,
+        }
+    }
+}
+
+fn use_carnivore_brain(
+    mut carnivore_query: Query<(&Transform, &MovingBody, &mut TargetPoint), (With<Carnivore>,)>,
+    herbivore_query: Query<&Transform, With<Herbivore>>,
+) {
+    for (carnivore_transform, carnivore_body, mut target_point) in carnivore_query.iter_mut() {
+        let mut min_dist = f32::MAX;
+        let mut target_pos: Option<Vec3> = None;
+
+        for herbivore_transform in herbivore_query.iter() {
+            let dist = (carnivore_transform.translation - herbivore_transform.translation)
+                .length_squared();
+            if dist < min_dist {
+                min_dist = dist;
+                target_pos = Some(herbivore_transform.translation);
+            }
+        }
+
+        match target_pos {
+            Some(target_pos) => {
+                // Algorithm taken from: https://gamedev.stackexchange.com/questions/17313/how-does-one-prevent-homing-missiles-from-orbiting-their-targets
+                let v_targ = -carnivore_body.curr_velocity;
+                let s = carnivore_transform.translation - target_pos;
+                let t_estimate = s.length() / (v_targ.length() + f32::EPSILON);
+
+                // Unclear why this constant makes things better, but it
+                // prevents oscillating to the left and right when chasing after
+                // targets.
+                let stability_constant = 0.8;
+                let target = target_pos + stability_constant * v_targ * t_estimate
+                    - carnivore_transform.translation;
+                target_point.0 = Some(target);
+            }
+            None => target_point.0 = None,
         }
     }
 }
@@ -259,24 +357,21 @@ fn eat_berries(
     mut commands: Commands,
     mut game_data: ResMut<SimData>,
     berry_query: Query<(Entity, &mut Transform), (With<Berry>, Without<Herbivore>)>,
-    mut herbivore_query: Query<
-        (&mut Transform, &Rotation, &mut Hunger),
-        (With<Herbivore>, Without<Berry>),
-    >,
+    mut herbivore_query: Query<(&mut Transform, &Rotation, &mut Hunger), With<Herbivore>>,
 ) {
     for (berry_entity, berry_transform) in berry_query.iter() {
-        let berry_size = berry_transform.scale.truncate() * Vec2::new(2.0, 2.0);
+        let berry_size = berry_transform.scale.truncate() * Vec2::new(BERRY_RENDER_WIDTH, BERRY_RENDER_HEIGHT);
 
         for (herbivore_transform, rotation, mut hunger) in herbivore_query.iter_mut() {
             // TODO: Extract these parameters to some form of config file/code.
-            let mouth_offset = herbivore_transform.scale.truncate() * 5.0;
+            let mouth_offset = herbivore_transform.scale[1] * HERBIVORE_RENDER_HEIGHT / 3.0;
             let mouth_translation = herbivore_transform.translation
                 + Vec3::new(
-                    -rotation.0.sin() * mouth_offset.x,
-                    rotation.0.cos() * mouth_offset.y,
+                    -rotation.0.sin() * mouth_offset,
+                    rotation.0.cos() * mouth_offset,
                     0.0,
                 );
-            let mouth_size = herbivore_transform.scale.truncate() * Vec2::new(4.0, 2.0);
+            let mouth_size = herbivore_transform.scale.truncate() * Vec2::new(2.0 * HERBIVORE_RENDER_WIDTH / 3.0, HERBIVORE_RENDER_HEIGHT / 8.0);
 
             let berry = Aabb2d::new(berry_transform.translation.truncate(), berry_size);
             let mouth = Aabb2d::new(mouth_translation.truncate(), mouth_size);
@@ -292,7 +387,47 @@ fn eat_berries(
                     hunger.curr_fullness = new_fullness;
                 }
 
-                // Break here so that no other herbivore can eat the same berry during the same frame.
+                // Break here so that no other unit can eat the same target during the same frame.
+                break;
+            }
+        }
+    }
+}
+
+fn eat_herbivores(
+    mut commands: Commands,
+    herbivore_query: Query<(Entity, &mut Transform), (With<Herbivore>, Without<Carnivore>)>,
+    mut carnivore_query: Query<(&mut Transform, &Rotation, &mut Hunger), With<Carnivore>>,
+) {
+    for (herbivore_entity, herbivore_transform) in herbivore_query.iter() {
+        // HERBIVORE_RENDER_WIDTH is intentionally used in both dimensions.
+        let herbivore_size = herbivore_transform.scale.truncate() * Vec2::new(HERBIVORE_RENDER_WIDTH / 2.0, HERBIVORE_RENDER_WIDTH / 2.0);
+
+        for (carnivore_transform, rotation, mut hunger) in carnivore_query.iter_mut() {
+            // TODO: Extract these parameters to some form of config file/code.
+            let mouth_offset = carnivore_transform.scale.truncate()[1] * CARNIVORE_RENDER_HEIGHT / 3.0;
+            let mouth_translation = carnivore_transform.translation
+                + Vec3::new(
+                    -rotation.0.sin() * mouth_offset,
+                    rotation.0.cos() * mouth_offset,
+                    0.0,
+                );
+            let mouth_size = carnivore_transform.scale.truncate() * Vec2::new(3.0, 3.0);
+
+            let herbivore = Aabb2d::new(herbivore_transform.translation.truncate(), herbivore_size);
+            let mouth = Aabb2d::new(mouth_translation.truncate(), mouth_size);
+
+            if herbivore.intersects(&mouth) {
+                commands.entity(herbivore_entity).despawn();
+
+                let new_fullness = hunger.curr_fullness + HERBIVORE_FULLNESS_GAIN;
+                if new_fullness > hunger.max_fullness {
+                    hunger.curr_fullness = hunger.max_fullness;
+                } else {
+                    hunger.curr_fullness = new_fullness;
+                }
+
+                // Break here so that no other unit can eat the same target during the same frame.
                 break;
             }
         }
