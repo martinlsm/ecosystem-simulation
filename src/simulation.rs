@@ -9,20 +9,20 @@ use bevy::{
 use rand::Rng;
 
 const NUM_CARNIVORES: usize = 1;
-const NUM_HERBIVORES: usize = 10;
+const NUM_FERNWORMS: usize = 10;
 const MAX_BERRIES: u64 = 10;
 
 const BERRY_FULLNESS_GAIN: f32 = 40.0;
-const HERBIVORE_FULLNESS_GAIN: f32 = 80.0;
+const FERNWORM_FULLNESS_GAIN: f32 = 80.0;
 
 const BERRY_RENDER_HEIGHT: f32 = 16.0;
 const BERRY_RENDER_WIDTH: f32 = 16.0;
 
-const HERBIVORE_SPRITE_HEIGHT: u32 = 16;
-const HERBIVORE_SPRITE_WIDTH: u32 = 7;
-const HERBIVORE_SCALE_FACTOR: f32 = 4.0;
-const HERBIVORE_RENDER_HEIGHT: f32 = (HERBIVORE_SPRITE_HEIGHT as f32) * HERBIVORE_SCALE_FACTOR;
-const HERBIVORE_RENDER_WIDTH: f32 = (HERBIVORE_SPRITE_WIDTH as f32) * HERBIVORE_SCALE_FACTOR;
+const FERNWORM_SPRITE_HEIGHT: u32 = 16;
+const FERNWORM_SPRITE_WIDTH: u32 = 7;
+const FERNWORM_SCALE_FACTOR: f32 = 4.0;
+const FERNWORM_RENDER_HEIGHT: f32 = (FERNWORM_SPRITE_HEIGHT as f32) * FERNWORM_SCALE_FACTOR;
+const FERNWORM_RENDER_WIDTH: f32 = (FERNWORM_SPRITE_WIDTH as f32) * FERNWORM_SCALE_FACTOR;
 
 const CARNIVORE_SPRITE_HEIGHT: u32 = 25;
 const CARNIVORE_SPRITE_WIDTH: u32 = 11;
@@ -66,13 +66,13 @@ struct SimulationComponent;
 struct Rotation(f32);
 
 #[derive(Component)]
-struct Herbivore;
+struct Fernworm;
 
 #[derive(Component)]
 struct Carnivore;
 
 #[derive(Component)]
-struct HerbivoreCorpse;
+struct FernwormCorpse;
 
 #[derive(Component)]
 struct Berry;
@@ -99,7 +99,7 @@ pub fn simulation_plugin(app: &mut App) {
         )
         .add_systems(Update, spawn_berries.run_if(in_state(AppState::Simulation)))
         .add_systems(Update, eat_berries.run_if(in_state(AppState::Simulation)))
-        .add_systems(Update, eat_herbivores.run_if(in_state(AppState::Simulation)))
+        .add_systems(Update, eat_fernworms.run_if(in_state(AppState::Simulation)))
         .add_systems(
             Update,
             update_velocity.run_if(in_state(AppState::Simulation)),
@@ -128,7 +128,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut game_data: 
         },
     ));
 
-    for _ in 0..NUM_HERBIVORES {
+    for _ in 0..NUM_FERNWORMS {
         let init_pos = Vec3::new(
             rng.gen_range(PLAYABLE_AREA_X0..PLAYABLE_AREA_X1) as f32,
             rng.gen_range(PLAYABLE_AREA_Y0..PLAYABLE_AREA_Y1) as f32,
@@ -137,11 +137,11 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut game_data: 
 
         commands.spawn((
             SimulationComponent,
-            Herbivore,
+            Fernworm,
             Rotation(0.0),
             Sprite {
-                image: asset_server.load("sprites/herbivore.png"),
-                custom_size: Some(Vec2::new(HERBIVORE_RENDER_WIDTH, HERBIVORE_RENDER_HEIGHT)),
+                image: asset_server.load("sprites/fernworm.png"),
+                custom_size: Some(Vec2::new(FERNWORM_RENDER_WIDTH, FERNWORM_RENDER_HEIGHT)),
                 ..default()
             },
             Transform {
@@ -235,11 +235,10 @@ fn apply_rotation(mut query: Query<(&mut Rotation, &mut Transform, &MovingBody)>
 fn update_velocity(mut query: Query<(&mut MovingBody, &TargetPoint)>, time: Res<Time>) {
     for (mut moving_body, target_point) in query.iter_mut() {
         if let Some(p) = target_point.0 {
-            moving_body.curr_acceleration = (p.normalize_or_zero()
-                        * moving_body.max_acceleration)
-                        .clamp_length_max(time.delta_secs() * moving_body.max_acceleration);
-                    moving_body.curr_velocity = (moving_body.curr_velocity + moving_body.curr_acceleration)
-                        .clamp_length_max(moving_body.max_speed);
+            moving_body.curr_acceleration = (p.normalize_or_zero() * moving_body.max_acceleration)
+                .clamp_length_max(time.delta_secs() * moving_body.max_acceleration);
+            moving_body.curr_velocity = (moving_body.curr_velocity + moving_body.curr_acceleration)
+                .clamp_length_max(moving_body.max_speed);
         } else {
             moving_body.curr_acceleration = -moving_body.curr_velocity
         }
@@ -279,17 +278,16 @@ fn spawn_berries(
 }
 
 fn use_brain(
-    mut herbivore_query: Query<(&Transform, &MovingBody, &mut TargetPoint), With<Herbivore>>,
+    mut fernworm_query: Query<(&Transform, &MovingBody, &mut TargetPoint), With<Fernworm>>,
     berry_query: Query<&Transform, With<Berry>>,
 ) {
-    for (herbivore_transform, moving_body, mut herbivore_target_point) in herbivore_query.iter_mut()
-    {
+    for (fernworm_transform, moving_body, mut fernworm_target_point) in fernworm_query.iter_mut() {
         let mut min_dist = f32::MAX;
         let mut target_berry_pos: Option<Vec3> = None;
 
         for berry_transform in berry_query.iter() {
             let dist =
-                (berry_transform.translation - herbivore_transform.translation).length_squared();
+                (berry_transform.translation - fernworm_transform.translation).length_squared();
             if dist < min_dist {
                 min_dist = dist;
                 target_berry_pos = Some(berry_transform.translation);
@@ -300,7 +298,7 @@ fn use_brain(
             Some(target_pos) => {
                 // Algorithm taken from: https://gamedev.stackexchange.com/questions/17313/how-does-one-prevent-homing-missiles-from-orbiting-their-targets
                 let v_targ = -moving_body.curr_velocity;
-                let s = herbivore_transform.translation - target_pos;
+                let s = fernworm_transform.translation - target_pos;
                 let t_estimate = s.length() / (v_targ.length() + f32::EPSILON);
 
                 // Unclear why this constant makes things better, but it
@@ -308,28 +306,28 @@ fn use_brain(
                 // targets.
                 let stability_constant = 0.8;
                 let target = target_pos + stability_constant * v_targ * t_estimate
-                    - herbivore_transform.translation;
-                herbivore_target_point.0 = Some(target);
+                    - fernworm_transform.translation;
+                fernworm_target_point.0 = Some(target);
             }
-            None => herbivore_target_point.0 = None,
+            None => fernworm_target_point.0 = None,
         }
     }
 }
 
 fn use_carnivore_brain(
     mut carnivore_query: Query<(&Transform, &MovingBody, &mut TargetPoint), (With<Carnivore>,)>,
-    herbivore_query: Query<&Transform, With<Herbivore>>,
+    fernworm_query: Query<&Transform, With<Fernworm>>,
 ) {
     for (carnivore_transform, carnivore_body, mut target_point) in carnivore_query.iter_mut() {
         let mut min_dist = f32::MAX;
         let mut target_pos: Option<Vec3> = None;
 
-        for herbivore_transform in herbivore_query.iter() {
-            let dist = (carnivore_transform.translation - herbivore_transform.translation)
-                .length_squared();
+        for fernworm_transform in fernworm_query.iter() {
+            let dist =
+                (carnivore_transform.translation - fernworm_transform.translation).length_squared();
             if dist < min_dist {
                 min_dist = dist;
-                target_pos = Some(herbivore_transform.translation);
+                target_pos = Some(fernworm_transform.translation);
             }
         }
 
@@ -356,22 +354,27 @@ fn use_carnivore_brain(
 fn eat_berries(
     mut commands: Commands,
     mut game_data: ResMut<SimData>,
-    berry_query: Query<(Entity, &mut Transform), (With<Berry>, Without<Herbivore>)>,
-    mut herbivore_query: Query<(&mut Transform, &Rotation, &mut Hunger), With<Herbivore>>,
+    berry_query: Query<(Entity, &mut Transform), (With<Berry>, Without<Fernworm>)>,
+    mut fernworm_query: Query<(&mut Transform, &Rotation, &mut Hunger), With<Fernworm>>,
 ) {
     for (berry_entity, berry_transform) in berry_query.iter() {
-        let berry_size = berry_transform.scale.truncate() * Vec2::new(BERRY_RENDER_WIDTH, BERRY_RENDER_HEIGHT);
+        let berry_size =
+            berry_transform.scale.truncate() * Vec2::new(BERRY_RENDER_WIDTH, BERRY_RENDER_HEIGHT);
 
-        for (herbivore_transform, rotation, mut hunger) in herbivore_query.iter_mut() {
+        for (fernworm_transform, rotation, mut hunger) in fernworm_query.iter_mut() {
             // TODO: Extract these parameters to some form of config file/code.
-            let mouth_offset = herbivore_transform.scale[1] * HERBIVORE_RENDER_HEIGHT / 3.0;
-            let mouth_translation = herbivore_transform.translation
+            let mouth_offset = fernworm_transform.scale[1] * FERNWORM_RENDER_HEIGHT / 3.0;
+            let mouth_translation = fernworm_transform.translation
                 + Vec3::new(
                     -rotation.0.sin() * mouth_offset,
                     rotation.0.cos() * mouth_offset,
                     0.0,
                 );
-            let mouth_size = herbivore_transform.scale.truncate() * Vec2::new(2.0 * HERBIVORE_RENDER_WIDTH / 3.0, HERBIVORE_RENDER_HEIGHT / 8.0);
+            let mouth_size = fernworm_transform.scale.truncate()
+                * Vec2::new(
+                    2.0 * FERNWORM_RENDER_WIDTH / 3.0,
+                    FERNWORM_RENDER_HEIGHT / 8.0,
+                );
 
             let berry = Aabb2d::new(berry_transform.translation.truncate(), berry_size);
             let mouth = Aabb2d::new(mouth_translation.truncate(), mouth_size);
@@ -394,18 +397,20 @@ fn eat_berries(
     }
 }
 
-fn eat_herbivores(
+fn eat_fernworms(
     mut commands: Commands,
-    herbivore_query: Query<(Entity, &mut Transform), (With<Herbivore>, Without<Carnivore>)>,
+    fernworm_query: Query<(Entity, &mut Transform), (With<Fernworm>, Without<Carnivore>)>,
     mut carnivore_query: Query<(&mut Transform, &Rotation, &mut Hunger), With<Carnivore>>,
 ) {
-    for (herbivore_entity, herbivore_transform) in herbivore_query.iter() {
-        // HERBIVORE_RENDER_WIDTH is intentionally used in both dimensions.
-        let herbivore_size = herbivore_transform.scale.truncate() * Vec2::new(HERBIVORE_RENDER_WIDTH / 2.0, HERBIVORE_RENDER_WIDTH / 2.0);
+    for (fernworm_entity, fernworm_transform) in fernworm_query.iter() {
+        // fernworm_RENDER_WIDTH is intentionally used in both dimensions.
+        let fernworm_size = fernworm_transform.scale.truncate()
+            * Vec2::new(FERNWORM_RENDER_WIDTH / 2.0, FERNWORM_RENDER_WIDTH / 2.0);
 
         for (carnivore_transform, rotation, mut hunger) in carnivore_query.iter_mut() {
             // TODO: Extract these parameters to some form of config file/code.
-            let mouth_offset = carnivore_transform.scale.truncate()[1] * CARNIVORE_RENDER_HEIGHT / 3.0;
+            let mouth_offset =
+                carnivore_transform.scale.truncate()[1] * CARNIVORE_RENDER_HEIGHT / 3.0;
             let mouth_translation = carnivore_transform.translation
                 + Vec3::new(
                     -rotation.0.sin() * mouth_offset,
@@ -414,13 +419,13 @@ fn eat_herbivores(
                 );
             let mouth_size = carnivore_transform.scale.truncate() * Vec2::new(3.0, 3.0);
 
-            let herbivore = Aabb2d::new(herbivore_transform.translation.truncate(), herbivore_size);
+            let fernworm = Aabb2d::new(fernworm_transform.translation.truncate(), fernworm_size);
             let mouth = Aabb2d::new(mouth_translation.truncate(), mouth_size);
 
-            if herbivore.intersects(&mouth) {
-                commands.entity(herbivore_entity).despawn();
+            if fernworm.intersects(&mouth) {
+                commands.entity(fernworm_entity).despawn();
 
-                let new_fullness = hunger.curr_fullness + HERBIVORE_FULLNESS_GAIN;
+                let new_fullness = hunger.curr_fullness + FERNWORM_FULLNESS_GAIN;
                 if new_fullness > hunger.max_fullness {
                     hunger.curr_fullness = hunger.max_fullness;
                 } else {
@@ -438,9 +443,9 @@ fn repel_bodies(mut body_query: Query<(&mut Transform, &mut MovingBody)>, time: 
     let mut combinations = body_query.iter_combinations_mut();
     while let Some([mut t1, mut t2]) = combinations.fetch_next() {
         // Bounds before collision force is applied.
-        const COLLISION_RADIUS_SQUARED: f32 = (HERBIVORE_RENDER_HEIGHT
-            + HERBIVORE_RENDER_WIDTH / 2.0)
-            * (HERBIVORE_RENDER_HEIGHT + HERBIVORE_RENDER_WIDTH / 2.0);
+        const COLLISION_RADIUS_SQUARED: f32 = (FERNWORM_RENDER_HEIGHT
+            + FERNWORM_RENDER_WIDTH / 2.0)
+            * (FERNWORM_RENDER_HEIGHT + FERNWORM_RENDER_WIDTH / 2.0);
 
         // Strength of the collision force.
         const FORCE_CONSTANT: f32 = 500000.0;
@@ -485,11 +490,11 @@ fn kill_starved_units(
             // Spawn sprite of the corpse.
             commands.spawn((
                 SimulationComponent,
-                HerbivoreCorpse,
+                FernwormCorpse,
                 Rotation(rotation.0),
                 Sprite {
-                    image: asset_server.load("sprites/herbivore_corpse.png"),
-                    custom_size: Some(Vec2::new(HERBIVORE_RENDER_WIDTH, HERBIVORE_RENDER_HEIGHT)),
+                    image: asset_server.load("sprites/fernworm_corpse.png"),
+                    custom_size: Some(Vec2::new(FERNWORM_RENDER_WIDTH, FERNWORM_RENDER_HEIGHT)),
                     ..default()
                 },
                 Transform {
