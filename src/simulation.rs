@@ -1,14 +1,15 @@
 mod berry;
 mod constants;
-mod core;
-mod fernworm;
 mod hunger;
-mod zyrthid;
+mod motion;
+mod unit;
 
 use std::f32::consts::PI;
 
-use crate::simulation::constants::*;
-use crate::state::AppState;
+use crate::{
+    simulation::{constants::*, unit::fernworm, unit::zyrthid},
+    state::AppState,
+};
 
 use bevy::{
     math::bounding::{Aabb2d, IntersectsVolume},
@@ -28,55 +29,32 @@ struct SimulationComponent;
 pub fn simulation_plugin(app: &mut App) {
     app.add_systems(OnEnter(AppState::Simulation), setup)
         .add_systems(OnExit(AppState::Simulation), exit)
-        .add_systems(Update, handle_input.run_if(in_state(AppState::Simulation)))
         .add_systems(
             Update,
-            core::apply_velocity.run_if(in_state(AppState::Simulation)),
-        )
-        .add_systems(
-            Update,
-            core::apply_rotation.run_if(in_state(AppState::Simulation)),
-        )
-        .add_systems(
-            Update,
-            hunger::hunger_drain.run_if(in_state(AppState::Simulation)),
-        )
-        .add_systems(
-            Update,
-            hunger::kill_starved_units.run_if(in_state(AppState::Simulation)),
-        )
-        .add_systems(
-            Update,
-            berry::spawn_berries.run_if(in_state(AppState::Simulation)),
-        )
-        .add_systems(
-            Update,
-            fernworm::eat_berries.run_if(in_state(AppState::Simulation)),
-        )
-        .add_systems(
-            Update,
-            zyrthid::eat_fernworms.run_if(in_state(AppState::Simulation)),
-        )
-        .add_systems(
-            Update,
-            core::update_velocity.run_if(in_state(AppState::Simulation)),
-        )
-        .add_systems(
-            Update,
-            core::repel_bodies.run_if(in_state(AppState::Simulation)),
-        )
-        .add_systems(
-            Update,
-            fernworm::use_brain.run_if(in_state(AppState::Simulation)),
-        )
-        .add_systems(
-            Update,
-            zyrthid::use_brain.run_if(in_state(AppState::Simulation)),
+            (
+                handle_input.run_if(in_state(AppState::Simulation)),
+                motion::apply_velocity.run_if(in_state(AppState::Simulation)),
+                motion::apply_rotation.run_if(in_state(AppState::Simulation)),
+                hunger::hunger_drain.run_if(in_state(AppState::Simulation)),
+                berry::spawn_berries.run_if(in_state(AppState::Simulation)),
+                motion::update_velocity.run_if(in_state(AppState::Simulation)),
+                motion::repel_bodies.run_if(in_state(AppState::Simulation)),
+                unit::fernworm::use_brain.run_if(in_state(AppState::Simulation)),
+                zyrthid::use_brain.run_if(in_state(AppState::Simulation)),
+                (
+                    unit::fernworm::eat_berries.run_if(in_state(AppState::Simulation)),
+                    zyrthid::eat_fernworms.run_if(in_state(AppState::Simulation)),
+                    hunger::kill_starved_units.run_if(in_state(AppState::Simulation)),
+                    unit::kill_units.run_if(in_state(AppState::Simulation)),
+                )
+                    .chain(),
+            ),
         )
         .insert_resource(SimData {
             num_berries: 0,
             max_berries: MAX_BERRIES,
-        });
+        })
+        .add_event::<unit::DeathEvent>();
 }
 
 fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut game_data: ResMut<SimData>) {
@@ -101,7 +79,8 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut game_data: 
         commands.spawn((
             SimulationComponent,
             fernworm::Fernworm,
-            core::Rotation(0.0),
+            unit::UnitType::Fernworm,
+            motion::Rotation(0.0),
             Sprite {
                 image: asset_server.load("sprites/fernworm.png"),
                 custom_size: Some(Vec2::new(FERNWORM_RENDER_WIDTH, FERNWORM_RENDER_HEIGHT)),
@@ -111,7 +90,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut game_data: 
                 translation: init_pos,
                 ..default()
             },
-            core::MovingBody {
+            motion::MovingBody {
                 curr_velocity: Vec3::ZERO,
                 max_speed: 200.0,
                 curr_acceleration: Vec3::ZERO,
@@ -120,10 +99,10 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut game_data: 
             hunger::Hunger {
                 curr_fullness: 100.0,
                 max_fullness: 100.0,
-                drain_per_unit_traveled: 5.0 / 200.0,
+                drain_per_unit_traveled: 25.0 / 200.0,
                 last_sampled_pos: init_pos,
             },
-            core::TargetPoint(None),
+            motion::TargetPoint(None),
         ));
     }
 
@@ -137,7 +116,8 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut game_data: 
         commands.spawn((
             SimulationComponent,
             zyrthid::Zyrthid,
-            core::Rotation(0.0),
+            unit::UnitType::Zyrthid,
+            motion::Rotation(0.0),
             Sprite {
                 image: asset_server.load("sprites/zyrthid.png"),
                 custom_size: Some(Vec2::new(ZYRTHID_RENDER_WIDTH, ZYRTHID_RENDER_HEIGHT)),
@@ -147,7 +127,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut game_data: 
                 translation: init_pos,
                 ..default()
             },
-            core::MovingBody {
+            motion::MovingBody {
                 curr_velocity: Vec3::ZERO,
                 max_speed: 150.0,
                 curr_acceleration: Vec3::ZERO,
@@ -156,10 +136,10 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut game_data: 
             hunger::Hunger {
                 curr_fullness: 200.0,
                 max_fullness: 200.0,
-                drain_per_unit_traveled: 5.0 / 250.0,
+                drain_per_unit_traveled: 15.0 / 150.0,
                 last_sampled_pos: init_pos,
             },
-            core::TargetPoint(None),
+            motion::TargetPoint(None),
         ));
     }
 

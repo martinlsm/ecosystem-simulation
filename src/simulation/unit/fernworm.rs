@@ -5,12 +5,9 @@ use crate::simulation::*;
 #[derive(Component)]
 pub struct Fernworm;
 
-#[derive(Component)]
-pub struct Corpse;
-
 pub fn use_brain(
     mut fernworm_query: Query<
-        (&Transform, &core::MovingBody, &mut core::TargetPoint),
+        (&Transform, &motion::MovingBody, &mut motion::TargetPoint),
         With<Fernworm>,
     >,
     berry_query: Query<&Transform, With<berry::Berry>>,
@@ -53,7 +50,7 @@ pub fn eat_berries(
     mut game_data: ResMut<SimData>,
     berry_query: Query<(Entity, &mut Transform), (With<berry::Berry>, Without<Fernworm>)>,
     mut fernworm_query: Query<
-        (&mut Transform, &core::Rotation, &mut hunger::Hunger),
+        (&mut Transform, &motion::Rotation, &mut hunger::Hunger),
         With<Fernworm>,
     >,
 ) {

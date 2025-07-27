@@ -1,6 +1,6 @@
-pub const NUM_ZYRTHIDS: usize = 1;
-pub const NUM_FERNWORMS: usize = 10;
-pub const MAX_BERRIES: u64 = 10;
+pub const NUM_ZYRTHIDS: usize = 3;
+pub const NUM_FERNWORMS: usize = 100;
+pub const MAX_BERRIES: u64 = 20;
 
 pub const BERRY_FULLNESS_GAIN: f32 = 40.0;
 pub const FERNWORM_FULLNESS_GAIN: f32 = 80.0;

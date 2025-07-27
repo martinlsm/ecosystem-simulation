@@ -20,31 +20,25 @@ pub fn hunger_drain(mut query: Query<(&Transform, &mut Hunger)>) {
 }
 
 pub fn kill_starved_units(
-    mut commands: Commands,
-    query: Query<(Entity, &Hunger, &Transform, &core::Rotation)>,
-    asset_server: Res<AssetServer>,
+    query: Query<(
+        Entity,
+        &unit::UnitType,
+        &Hunger,
+        &Transform,
+        &motion::Rotation,
+    )>,
+    mut events: EventWriter<unit::DeathEvent>,
 ) {
-    for (entity, hunger, transform, rotation) in query.iter() {
+    for (entity, unit, hunger, transform, rotation) in query.iter() {
         if hunger.curr_fullness <= 0.0 {
-            // Spawn sprite of the corpse.
-            commands.spawn((
-                SimulationComponent,
-                fernworm::Corpse,
-                core::Rotation(rotation.0),
-                Sprite {
-                    image: asset_server.load("sprites/fernworm_corpse.png"), // TODO: Should not be hardcoded
-                    custom_size: Some(Vec2::new(FERNWORM_RENDER_WIDTH, FERNWORM_RENDER_HEIGHT)),
-                    ..default()
-                },
-                Transform {
+            events.write(unit::DeathEvent {
+                entity: entity,
+                corpse: Some(unit::CorpseData {
+                    unit: *unit,
                     translation: transform.translation,
-                    rotation: Quat::from_rotation_z(rotation.0),
-                    ..default()
-                },
-            ));
-
-            // Despawn the living sprite.
-            commands.entity(entity).despawn();
+                    rotation: rotation.0,
+                }),
+            });
         }
     }
 }

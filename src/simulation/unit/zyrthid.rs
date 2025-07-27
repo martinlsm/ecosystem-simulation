@@ -7,8 +7,8 @@ pub struct Zyrthid;
 
 pub fn use_brain(
     mut zyrthid_query: Query<
-        (&Transform, &core::MovingBody, &mut core::TargetPoint),
-        (With<Zyrthid>,),
+        (&Transform, &motion::MovingBody, &mut motion::TargetPoint),
+        With<Zyrthid>,
     >,
     fernworm_query: Query<&Transform, With<fernworm::Fernworm>>,
 ) {
@@ -46,9 +46,12 @@ pub fn use_brain(
 }
 
 pub fn eat_fernworms(
-    mut commands: Commands,
     fernworm_query: Query<(Entity, &mut Transform), (With<fernworm::Fernworm>, Without<Zyrthid>)>,
-    mut zyrthid_query: Query<(&mut Transform, &core::Rotation, &mut hunger::Hunger), With<Zyrthid>>,
+    mut zyrthid_query: Query<
+        (&mut Transform, &motion::Rotation, &mut hunger::Hunger),
+        With<Zyrthid>,
+    >,
+    mut event: EventWriter<unit::DeathEvent>,
 ) {
     for (fernworm_entity, fernworm_transform) in fernworm_query.iter() {
         // fernworm_RENDER_WIDTH is intentionally used in both dimensions.
@@ -70,7 +73,10 @@ pub fn eat_fernworms(
             let mouth = Aabb2d::new(mouth_translation.truncate(), mouth_size);
 
             if fernworm.intersects(&mouth) {
-                commands.entity(fernworm_entity).despawn();
+                event.write(unit::DeathEvent {
+                    entity: fernworm_entity,
+                    corpse: None,
+                });
 
                 let new_fullness = hunger.curr_fullness + FERNWORM_FULLNESS_GAIN;
                 if new_fullness > hunger.max_fullness {
