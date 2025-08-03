@@ -50,6 +50,7 @@ pub fn simulation_plugin(app: &mut App) {
                     .chain(),
             ),
         )
+        .add_observer(on_drag_move_screen)
         .insert_resource(SimData {
             num_berries: 0,
             max_berries: MAX_BERRIES,
@@ -146,14 +147,28 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut game_data: 
     game_data.num_berries = 0;
 }
 
+fn exit(query: Query<Entity, With<SimulationComponent>>, mut commands: Commands) {
+    for entity in &query {
+        commands.entity(entity).despawn();
+    }
+}
+
 fn handle_input(keyboard_input: Res<ButtonInput<KeyCode>>, mut state: ResMut<NextState<AppState>>) {
     if keyboard_input.just_pressed(KeyCode::Escape) {
         state.set(AppState::Menu);
     }
 }
 
-fn exit(query: Query<Entity, With<SimulationComponent>>, mut commands: Commands) {
-    for entity in &query {
-        commands.entity(entity).despawn();
+fn on_drag_move_screen(
+    drag: Trigger<Pointer<Drag>>,
+    mut camera: Single<&mut Transform, With<Camera2d>>,
+    state: Res<State<AppState>>,
+) {
+    // Currently no way to only trigger the observer in one state. We have to explicitly check the state here.
+    if *state != AppState::Simulation {
+        return;
     }
+
+    camera.translation.x -= drag.delta.x;
+    camera.translation.y += drag.delta.y;
 }
