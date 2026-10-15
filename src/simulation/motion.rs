@@ -18,24 +18,32 @@ pub struct MovingBody {
 
 pub fn apply_velocity(
     mut query: Query<(&mut Transform, &MovingBody)>,
-    rock_query: Query<&Transform, (With<MapRock>, Without<MovingBody>)>,
     time: Res<Time>,
+    navigation_grid: Res<pathfinding::NavigationGrid>,
 ) {
     for (mut transform, moving_body) in query.iter_mut() {
-        let previous_position = transform.translation;
-        let mut next_position = previous_position + moving_body.curr_velocity * time.delta_secs();
-        next_position.x = next_position.x.clamp(PLAYABLE_AREA_X0, PLAYABLE_AREA_X1);
-        next_position.y = next_position.y.clamp(PLAYABLE_AREA_Y0, PLAYABLE_AREA_Y1);
+        let movement = moving_body.curr_velocity * time.delta_secs();
+        let mut next_position = transform.translation;
 
-        let entered_rock = rock_query.iter().any(|rock| {
-            let distance = next_position - rock.translation;
-            distance.x.abs() < TILE_WIDTH / 2.0 && distance.y.abs() < TILE_HEIGHT / 2.0
-        });
-        transform.translation = if entered_rock {
-            previous_position
-        } else {
-            next_position
-        };
+        let horizontal_position = Vec3::new(
+            (next_position.x + movement.x).clamp(PLAYABLE_AREA_X0, PLAYABLE_AREA_X1),
+            next_position.y,
+            next_position.z,
+        );
+        if !navigation_grid.is_blocked(horizontal_position) {
+            next_position.x = horizontal_position.x;
+        }
+
+        let vertical_position = Vec3::new(
+            next_position.x,
+            (next_position.y + movement.y).clamp(PLAYABLE_AREA_Y0, PLAYABLE_AREA_Y1),
+            next_position.z,
+        );
+        if !navigation_grid.is_blocked(vertical_position) {
+            next_position.y = vertical_position.y;
+        }
+
+        transform.translation = next_position;
     }
 }
 
@@ -60,15 +68,17 @@ pub fn update_velocity(mut query: Query<(&mut MovingBody, &TargetPoint)>, time: 
             moving_body.curr_acceleration = (p.normalize_or_zero() * moving_body.max_acceleration)
                 .clamp_length_max(time.delta_secs() * moving_body.max_acceleration);
             moving_body.curr_velocity = (moving_body.curr_velocity + moving_body.curr_acceleration)
-                .clamp_length_max(moving_body.max_speed);
+            .clamp_length_max(moving_body.max_speed);
         } else {
-            moving_body.curr_acceleration = -moving_body.curr_velocity
+            moving_body.curr_acceleration = Vec3::ZERO;
+            moving_body.curr_velocity = Vec3::ZERO;
         }
+
     }
 }
 
 pub fn repel_bodies(
-    mut body_query: Query<(&mut Transform, &mut MovingBody)>,
+    mut body_query: Query<(&mut Transform, &mut MovingBody), Without<MapRock>>,
     time: Res<Time>,
 ) {
     let mut combinations = body_query.iter_combinations_mut();

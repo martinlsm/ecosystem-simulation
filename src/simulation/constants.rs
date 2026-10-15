@@ -1,7 +1,7 @@
 pub const NUM_ZYRTHIDS: usize = 0;
 pub const NUM_FERNWORMS: usize = 0;
-pub const NUM_HARES: usize = 3;
-pub const MAX_BERRIES: u64 = 20;
+pub const NUM_HARES: usize = 1;
+pub const MAX_BERRIES: u64 = 0;
 pub const FERNWORM_MAX_SPEED: f32 = 40.0;
 pub const ZYRTHID_MAX_SPEED: f32 = 30.0;
 pub const HARE_MAX_SPEED: f32 = 50.0;

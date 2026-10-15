@@ -3,13 +3,14 @@ mod constants;
 mod hunger;
 mod motion;
 mod hare;
+mod pathfinding;
 mod tileset;
 mod unit;
 
 use std::f32::consts::PI;
 
 use crate::{
-    simulation::{constants::*, tileset::*, unit::fernworm, unit::zyrthid},
+    simulation::{constants::*, pathfinding::NavigationGrid, tileset::*, unit::fernworm, unit::zyrthid},
     state::{AppState, SimulationSeed},
 };
 
@@ -44,7 +45,7 @@ pub fn simulation_plugin(app: &mut App) {
                 berry::spawn_berries.run_if(in_state(AppState::Simulation)),
                 motion::update_velocity.run_if(in_state(AppState::Simulation)),
                 motion::repel_bodies.run_if(in_state(AppState::Simulation)),
-                hare::animate_walk.run_if(in_state(AppState::Simulation)),
+                hare::animate.run_if(in_state(AppState::Simulation)),
                 hare::use_brain.run_if(in_state(AppState::Simulation)),
                 unit::fernworm::use_brain.run_if(in_state(AppState::Simulation)),
                 zyrthid::use_brain.run_if(in_state(AppState::Simulation)),
@@ -82,6 +83,7 @@ fn setup(
         None,
         None,
     ));
+    let mut navigation_grid = NavigationGrid::new();
 
     for row in 0..MAP_ROWS {
         for column in 0..MAP_COLUMNS {
@@ -108,6 +110,10 @@ fn setup(
             ));
 
             if is_rock {
+                navigation_grid.set_blocked(
+                    pathfinding::GridPosition { column, row },
+                    true,
+                );
                 commands.spawn((
                     SimulationComponent,
                     MapRock,
@@ -204,24 +210,44 @@ fn setup(
         None,
         None,
     ));
+    let hare_idle_atlas_layout = texture_atlas_layouts.add(TextureAtlasLayout::from_grid(
+        UVec2::new(HARE_SPRITE_WIDTH, HARE_SPRITE_HEIGHT),
+        4,
+        4,
+        None,
+        None,
+    ));
+    let hare_idle_image = asset_server.load("sprites/animals/PNG/Without_shadow/Hare/Hare_Idle.png");
+    let hare_walk_image = asset_server.load("sprites/animals/PNG/Without_shadow/Hare/Hare_Walk.png");
 
     for _ in 0..NUM_HARES {
-        let init_pos = Vec3::new(
-            rng.gen_range(PLAYABLE_AREA_X0..PLAYABLE_AREA_X1),
-            rng.gen_range(PLAYABLE_AREA_Y0..PLAYABLE_AREA_Y1),
-            2.0,
-        );
+        let init_pos = loop {
+            let position = Vec3::new(
+                rng.gen_range(PLAYABLE_AREA_X0..PLAYABLE_AREA_X1),
+                rng.gen_range(PLAYABLE_AREA_Y0..PLAYABLE_AREA_Y1),
+                2.0,
+            );
+            if !navigation_grid.is_blocked(position) {
+                break position;
+            }
+        };
 
         commands.spawn((
             SimulationComponent,
             hare::Hare,
             hare::WalkAnimation {
                 timer: Timer::from_seconds(0.12, TimerMode::Repeating),
+                direction_row: 0,
+                frame: 0,
+                idle_image: hare_idle_image.clone(),
+                idle_layout: hare_idle_atlas_layout.clone(),
+                walk_image: hare_walk_image.clone(),
+                walk_layout: hare_atlas_layout.clone(),
             },
             Sprite {
-                image: asset_server.load("sprites/animals/PNG/Without_shadow/Hare/Hare_Walk.png"),
+                image: hare_idle_image.clone(),
                 texture_atlas: Some(TextureAtlas {
-                    layout: hare_atlas_layout.clone(),
+                    layout: hare_idle_atlas_layout.clone(),
                     index: 0,
                 }),
                 ..default()
@@ -237,6 +263,7 @@ fn setup(
         ));
     }
 
+    commands.insert_resource(navigation_grid);
     game_data.num_berries = 0;
 }
 

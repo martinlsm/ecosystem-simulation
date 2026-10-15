@@ -3,6 +3,7 @@ use bevy::prelude::*;
 use crate::simulation::*;
 
 const WALK_FRAME_COUNT: usize = 5;
+const IDLE_FRAME_COUNT: usize = 4;
 
 #[derive(Component)]
 pub struct Hare;
@@ -10,6 +11,12 @@ pub struct Hare;
 #[derive(Component)]
 pub struct WalkAnimation {
     pub timer: Timer,
+    pub direction_row: usize,
+    pub frame: usize,
+    pub idle_image: Handle<Image>,
+    pub idle_layout: Handle<TextureAtlasLayout>,
+    pub walk_image: Handle<Image>,
+    pub walk_layout: Handle<TextureAtlasLayout>,
 }
 
 pub fn use_brain(
@@ -18,36 +25,44 @@ pub fn use_brain(
         With<Hare>,
     >,
     berry_query: Query<&Transform, With<berry::Berry>>,
+    navigation_grid: Res<pathfinding::NavigationGrid>,
 ) {
-    for (hare_transform, moving_body, mut hare_target_point) in hare_query.iter_mut() {
-        let mut min_dist = f32::MAX;
-        let mut target_berry_pos: Option<Vec3> = None;
+    for (hare_transform, _moving_body, mut hare_target_point) in hare_query.iter_mut() {
+        let hare_cell = pathfinding::NavigationGrid::world_to_grid(hare_transform.translation);
+        let mut nearest_berry: Option<Vec3> = None;
+        let mut nearest_distance = f32::MAX;
 
         for berry_transform in berry_query.iter() {
-            let dist =
-                (berry_transform.translation - hare_transform.translation).length_squared();
-            if dist < min_dist {
-                min_dist = dist;
-                target_berry_pos = Some(berry_transform.translation);
+            let distance = berry_transform
+                .translation
+                .distance_squared(hare_transform.translation);
+            if distance < nearest_distance {
+                nearest_distance = distance;
+                nearest_berry = Some(berry_transform.translation);
             }
         }
 
-        match target_berry_pos {
-            Some(target_pos) => {
-                let v_targ = -moving_body.curr_velocity;
-                let s = hare_transform.translation - target_pos;
-                let t_estimate = s.length() / (v_targ.length() + f32::EPSILON);
-                let stability_constant = 0.4;
-                let target = target_pos + stability_constant * v_targ * t_estimate
-                    - hare_transform.translation;
-                hare_target_point.0 = Some(target);
-            }
-            None => hare_target_point.0 = None,
-        }
+        hare_target_point.0 = nearest_berry
+            .and_then(|berry| {
+                let berry_cell = pathfinding::NavigationGrid::world_to_grid(berry);
+                navigation_grid.find_path(
+                    hare_cell,
+                    berry_cell,
+                )
+                .map(|mut path| (berry, path.pop_front(), path.is_empty()))
+            })
+            .map(|(berry, next_cell, is_final_step)| {
+                if is_final_step {
+                    berry - hare_transform.translation
+                } else {
+                    pathfinding::NavigationGrid::grid_to_world(next_cell.unwrap())
+                        - hare_transform.translation
+                }
+            });
     }
 }
 
-pub fn animate_walk(
+pub fn animate(
     time: Res<Time>,
     mut hare_query: Query<
         (&mut Sprite, &motion::MovingBody, &mut WalkAnimation),
@@ -55,16 +70,35 @@ pub fn animate_walk(
     >,
 ) {
     for (mut sprite, moving_body, mut animation) in hare_query.iter_mut() {
-        let direction_row = direction_row(moving_body.curr_velocity);
+        if moving_body.curr_velocity.length_squared() > 0.01 {
+            animation.direction_row = direction_row(moving_body.curr_velocity);
+        }
         animation.timer.tick(time.delta());
 
-        if moving_body.curr_velocity.length_squared() > 0.01 {
-            if let Some(atlas) = sprite.texture_atlas.as_mut() {
-                let mut frame = atlas.index % WALK_FRAME_COUNT;
+        let is_moving = moving_body.curr_velocity.length_squared() > 0.01;
+        if is_moving {
+            if sprite.image != animation.walk_image {
+                sprite.image = animation.walk_image.clone();
+                animation.frame = 0;
+            }
+        } else if sprite.image != animation.idle_image {
+            sprite.image = animation.idle_image.clone();
+            animation.frame = 0;
+        }
+
+        if let Some(atlas) = sprite.texture_atlas.as_mut() {
+            if is_moving {
+                atlas.layout = animation.walk_layout.clone();
                 if animation.timer.just_finished() {
-                    frame = (frame + 1) % WALK_FRAME_COUNT;
+                    animation.frame = (animation.frame + 1) % WALK_FRAME_COUNT;
                 }
-                atlas.index = direction_row * WALK_FRAME_COUNT + frame;
+                atlas.index = animation.direction_row * WALK_FRAME_COUNT + animation.frame;
+            } else {
+                atlas.layout = animation.idle_layout.clone();
+                if animation.timer.just_finished() {
+                    animation.frame = (animation.frame + 1) % IDLE_FRAME_COUNT;
+                }
+                atlas.index = animation.direction_row * IDLE_FRAME_COUNT + animation.frame;
             }
         }
     }
