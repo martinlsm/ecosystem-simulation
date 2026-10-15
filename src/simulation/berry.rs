@@ -24,7 +24,6 @@ pub fn spawn_berries(
             Berry,
             Sprite {
                 image: asset_server.load("sprites/berry.png"),
-                custom_size: Some(Vec2::new(BERRY_RENDER_WIDTH, BERRY_RENDER_HEIGHT)),
                 ..default()
             },
             Transform {

@@ -16,11 +16,26 @@ pub struct MovingBody {
     pub max_acceleration: f32,
 }
 
-pub fn apply_velocity(mut query: Query<(&mut Transform, &MovingBody)>, time: Res<Time>) {
+pub fn apply_velocity(
+    mut query: Query<(&mut Transform, &MovingBody)>,
+    rock_query: Query<&Transform, (With<MapRock>, Without<MovingBody>)>,
+    time: Res<Time>,
+) {
     for (mut transform, moving_body) in query.iter_mut() {
-        // Update position.
-        transform.translation =
-            transform.translation + moving_body.curr_velocity * time.delta_secs();
+        let previous_position = transform.translation;
+        let mut next_position = previous_position + moving_body.curr_velocity * time.delta_secs();
+        next_position.x = next_position.x.clamp(PLAYABLE_AREA_X0, PLAYABLE_AREA_X1);
+        next_position.y = next_position.y.clamp(PLAYABLE_AREA_Y0, PLAYABLE_AREA_Y1);
+
+        let entered_rock = rock_query.iter().any(|rock| {
+            let distance = next_position - rock.translation;
+            distance.x.abs() < TILE_WIDTH / 2.0 && distance.y.abs() < TILE_HEIGHT / 2.0
+        });
+        transform.translation = if entered_rock {
+            previous_position
+        } else {
+            next_position
+        };
     }
 }
 
@@ -52,7 +67,10 @@ pub fn update_velocity(mut query: Query<(&mut MovingBody, &TargetPoint)>, time: 
     }
 }
 
-pub fn repel_bodies(mut body_query: Query<(&mut Transform, &mut MovingBody)>, time: Res<Time>) {
+pub fn repel_bodies(
+    mut body_query: Query<(&mut Transform, &mut MovingBody)>,
+    time: Res<Time>,
+) {
     let mut combinations = body_query.iter_combinations_mut();
     while let Some([mut t1, mut t2]) = combinations.fetch_next() {
         // Bounds before collision force is applied.
@@ -61,7 +79,7 @@ pub fn repel_bodies(mut body_query: Query<(&mut Transform, &mut MovingBody)>, ti
             * (FERNWORM_RENDER_HEIGHT + FERNWORM_RENDER_WIDTH / 2.0);
 
         // Strength of the collision force.
-        const FORCE_CONSTANT: f32 = 500000.0;
+        const FORCE_CONSTANT: f32 = 50000.0;
 
         let p1: Vec3 = t1.0.as_mut().translation;
         let p2: Vec3 = t2.0.as_mut().translation;
@@ -73,13 +91,12 @@ pub fn repel_bodies(mut body_query: Query<(&mut Transform, &mut MovingBody)>, ti
             0.0
         };
 
-        let body1_push_dir: Vec3 = (p1 - p2).normalize_or_zero() * force * time.delta_secs();
-        let body2_push_dir: Vec3 = (p1 - p2).normalize_or_zero() * force * time.delta_secs();
+        let push_direction = (p1 - p2).normalize_or_zero() * force * time.delta_secs();
 
         let moving_body1 = t1.1.as_mut();
-        moving_body1.curr_velocity += body1_push_dir;
+        moving_body1.curr_velocity += push_direction;
 
-        let body2 = t1.1.as_mut();
-        body2.curr_velocity += body2_push_dir;
+        let moving_body2 = t2.1.as_mut();
+        moving_body2.curr_velocity -= push_direction;
     }
 }

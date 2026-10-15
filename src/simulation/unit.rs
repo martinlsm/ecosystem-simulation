@@ -32,11 +32,6 @@ pub fn kill_units(
         commands.entity(event.entity).despawn();
 
         if let Some(corpse) = &event.corpse {
-            let custom_size = match corpse.unit {
-                UnitType::Fernworm => Vec2::new(FERNWORM_RENDER_WIDTH, FERNWORM_RENDER_HEIGHT),
-                UnitType::Zyrthid => Vec2::new(ZYRTHID_RENDER_WIDTH, ZYRTHID_RENDER_HEIGHT),
-            };
-
             commands.spawn((
                 SimulationComponent,
                 Sprite {
@@ -46,7 +41,6 @@ pub fn kill_units(
                         }
                         unit::UnitType::Zyrthid => asset_server.load("sprites/zyrthid_corpse.png"),
                     },
-                    custom_size: Some(custom_size),
                     ..default()
                 },
                 Transform {

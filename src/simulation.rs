@@ -2,20 +2,22 @@ mod berry;
 mod constants;
 mod hunger;
 mod motion;
+mod hare;
+mod tileset;
 mod unit;
 
 use std::f32::consts::PI;
 
 use crate::{
-    simulation::{constants::*, unit::fernworm, unit::zyrthid},
-    state::AppState,
+    simulation::{constants::*, tileset::*, unit::fernworm, unit::zyrthid},
+    state::{AppState, SimulationSeed},
 };
 
 use bevy::{
     math::bounding::{Aabb2d, IntersectsVolume},
     prelude::*,
 };
-use rand::Rng;
+use rand::{rngs::StdRng, Rng, SeedableRng};
 
 #[derive(Resource)]
 struct SimData {
@@ -25,6 +27,9 @@ struct SimData {
 
 #[derive(Component)]
 struct SimulationComponent;
+
+#[derive(Component)]
+pub(crate) struct MapRock;
 
 pub fn simulation_plugin(app: &mut App) {
     app.add_systems(OnEnter(AppState::Simulation), setup)
@@ -39,10 +44,13 @@ pub fn simulation_plugin(app: &mut App) {
                 berry::spawn_berries.run_if(in_state(AppState::Simulation)),
                 motion::update_velocity.run_if(in_state(AppState::Simulation)),
                 motion::repel_bodies.run_if(in_state(AppState::Simulation)),
+                hare::animate_walk.run_if(in_state(AppState::Simulation)),
+                hare::use_brain.run_if(in_state(AppState::Simulation)),
                 unit::fernworm::use_brain.run_if(in_state(AppState::Simulation)),
                 zyrthid::use_brain.run_if(in_state(AppState::Simulation)),
                 (
                     unit::fernworm::eat_berries.run_if(in_state(AppState::Simulation)),
+                    hare::eat_berries.run_if(in_state(AppState::Simulation)),
                     zyrthid::eat_fernworms.run_if(in_state(AppState::Simulation)),
                     hunger::kill_starved_units.run_if(in_state(AppState::Simulation)),
                     unit::kill_units.run_if(in_state(AppState::Simulation)),
@@ -58,17 +66,64 @@ pub fn simulation_plugin(app: &mut App) {
         .add_event::<unit::DeathEvent>();
 }
 
-fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut game_data: ResMut<SimData>) {
-    let mut rng = rand::thread_rng();
-
-    commands.spawn((
-        SimulationComponent,
-        Sprite {
-            image: asset_server.load("sprites/forest.png"),
-            custom_size: Some(Vec2::new(SCREEN_WIDTH, SCREEN_HEIGHT)),
-            ..default()
-        },
+fn setup(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
+    mut game_data: ResMut<SimData>,
+    seed: Res<SimulationSeed>,
+) {
+    let mut rng = StdRng::seed_from_u64(seed.0);
+    let tileset = asset_server.load("tileset/Tileset_32x32.png");
+    let atlas_layout = texture_atlas_layouts.add(TextureAtlasLayout::from_grid(
+        UVec2::splat(32),
+        16,
+        16,
+        None,
+        None,
     ));
+
+    for row in 0..MAP_ROWS {
+        for column in 0..MAP_COLUMNS {
+            let is_edge =
+                row == 0 || row == MAP_ROWS - 1 || column == 0 || column == MAP_COLUMNS - 1;
+            let is_rock = is_edge || rng.gen_bool(0.1);
+            let tile_position = Vec3::new(
+                -MAP_WIDTH / 2.0 + TILE_WIDTH * (column as f32 + 0.5),
+                -MAP_HEIGHT / 2.0 + TILE_HEIGHT * (row as f32 + 0.5),
+                0.0,
+            );
+
+            commands.spawn((
+                SimulationComponent,
+                Sprite {
+                    image: tileset.clone(),
+                    texture_atlas: Some(TextureAtlas {
+                        layout: atlas_layout.clone(),
+                        index: GRASS_TILE_INDEX,
+                    }),
+                    ..default()
+                },
+                Transform::from_translation(tile_position),
+            ));
+
+            if is_rock {
+                commands.spawn((
+                    SimulationComponent,
+                    MapRock,
+                    Sprite {
+                        image: tileset.clone(),
+                        texture_atlas: Some(TextureAtlas {
+                            layout: atlas_layout.clone(),
+                            index: ROCK_TILE_INDEX,
+                        }),
+                        ..default()
+                    },
+                    Transform::from_translation(tile_position + Vec3::Z * 0.1),
+                ));
+            }
+        }
+    }
 
     for _ in 0..NUM_FERNWORMS {
         let init_pos = Vec3::new(
@@ -84,7 +139,6 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut game_data: 
             motion::Rotation(0.0),
             Sprite {
                 image: asset_server.load("sprites/fernworm.png"),
-                custom_size: Some(Vec2::new(FERNWORM_RENDER_WIDTH, FERNWORM_RENDER_HEIGHT)),
                 ..default()
             },
             Transform {
@@ -93,14 +147,14 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut game_data: 
             },
             motion::MovingBody {
                 curr_velocity: Vec3::ZERO,
-                max_speed: 200.0,
+                max_speed: FERNWORM_MAX_SPEED,
                 curr_acceleration: Vec3::ZERO,
                 max_acceleration: 1000.0,
             },
             hunger::Hunger {
                 curr_fullness: 100.0,
                 max_fullness: 100.0,
-                drain_per_unit_traveled: 25.0 / 200.0,
+                drain_per_unit_traveled: 25.0 / FERNWORM_MAX_SPEED,
                 last_sampled_pos: init_pos,
             },
             motion::TargetPoint(None),
@@ -121,7 +175,6 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut game_data: 
             motion::Rotation(0.0),
             Sprite {
                 image: asset_server.load("sprites/zyrthid.png"),
-                custom_size: Some(Vec2::new(ZYRTHID_RENDER_WIDTH, ZYRTHID_RENDER_HEIGHT)),
                 ..default()
             },
             Transform {
@@ -130,15 +183,55 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut game_data: 
             },
             motion::MovingBody {
                 curr_velocity: Vec3::ZERO,
-                max_speed: 150.0,
+                max_speed: ZYRTHID_MAX_SPEED,
                 curr_acceleration: Vec3::ZERO,
                 max_acceleration: 1000.0,
             },
             hunger::Hunger {
                 curr_fullness: 200.0,
                 max_fullness: 200.0,
-                drain_per_unit_traveled: 15.0 / 150.0,
+                drain_per_unit_traveled: 15.0 / ZYRTHID_MAX_SPEED,
                 last_sampled_pos: init_pos,
+            },
+            motion::TargetPoint(None),
+        ));
+    }
+
+    let hare_atlas_layout = texture_atlas_layouts.add(TextureAtlasLayout::from_grid(
+        UVec2::new(HARE_SPRITE_WIDTH, HARE_SPRITE_HEIGHT),
+        5,
+        4,
+        None,
+        None,
+    ));
+
+    for _ in 0..NUM_HARES {
+        let init_pos = Vec3::new(
+            rng.gen_range(PLAYABLE_AREA_X0..PLAYABLE_AREA_X1),
+            rng.gen_range(PLAYABLE_AREA_Y0..PLAYABLE_AREA_Y1),
+            2.0,
+        );
+
+        commands.spawn((
+            SimulationComponent,
+            hare::Hare,
+            hare::WalkAnimation {
+                timer: Timer::from_seconds(0.12, TimerMode::Repeating),
+            },
+            Sprite {
+                image: asset_server.load("sprites/animals/PNG/Without_shadow/Hare/Hare_Walk.png"),
+                texture_atlas: Some(TextureAtlas {
+                    layout: hare_atlas_layout.clone(),
+                    index: 0,
+                }),
+                ..default()
+            },
+            Transform::from_translation(init_pos),
+            motion::MovingBody {
+                curr_velocity: Vec3::ZERO,
+                max_speed: HARE_MAX_SPEED,
+                curr_acceleration: Vec3::ZERO,
+                max_acceleration: 1000.0,
             },
             motion::TargetPoint(None),
         ));

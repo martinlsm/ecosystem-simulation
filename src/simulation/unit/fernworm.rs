@@ -35,7 +35,7 @@ pub fn use_brain(
                 // Unclear why this constant makes things better, but it
                 // prevents oscillating to the left and right when chasing after
                 // targets.
-                let stability_constant = 0.8;
+                let stability_constant = 0.4;
                 let target = target_pos + stability_constant * v_targ * t_estimate
                     - fernworm_transform.translation;
                 fernworm_target_point.0 = Some(target);
@@ -59,8 +59,7 @@ pub fn eat_berries(
             berry_transform.scale.truncate() * Vec2::new(BERRY_RENDER_WIDTH, BERRY_RENDER_HEIGHT);
 
         for (fernworm_transform, rotation, mut hunger) in fernworm_query.iter_mut() {
-            // TODO: Extract these parameters to some form of config file/code.
-            let mouth_offset = fernworm_transform.scale[1] * FERNWORM_RENDER_HEIGHT / 3.0;
+            let mouth_offset = fernworm_transform.scale[1];
             let mouth_translation = fernworm_transform.translation
                 + Vec3::new(
                     -rotation.0.sin() * mouth_offset,
