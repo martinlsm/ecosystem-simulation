@@ -52,6 +52,37 @@ impl NavigationGrid {
         )
     }
 
+    pub fn reachable_cells(&self, start: GridPosition, max_distance: usize) -> Vec<GridPosition> {
+        if self.blocked[start.row][start.column] {
+            return Vec::new();
+        }
+
+        let mut visited = [[false; MAP_COLUMNS]; MAP_ROWS];
+        let mut queue = VecDeque::new();
+        let mut reachable = Vec::new();
+        visited[start.row][start.column] = true;
+        queue.push_back((start, 0));
+
+        while let Some((current, distance)) = queue.pop_front() {
+            reachable.push(current);
+
+            if distance == max_distance {
+                continue;
+            }
+
+            for neighbor in self.neighbors(current).into_iter().flatten() {
+                if !visited[neighbor.row][neighbor.column]
+                    && !self.blocked[neighbor.row][neighbor.column]
+                {
+                    visited[neighbor.row][neighbor.column] = true;
+                    queue.push_back((neighbor, distance + 1));
+                }
+            }
+        }
+
+        reachable
+    }
+
     pub fn find_path(
         &self,
         start: GridPosition,
